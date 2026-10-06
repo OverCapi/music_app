@@ -1,142 +1,197 @@
 <script lang="ts">
-  import { player } from '../stores/player.svelte'
-  import { formatTime } from '../utils'
-  import Cover from './Cover.svelte'
-  import Icon from './Icon.svelte'
+  import { library } from "$lib/library.svelte";
+  import { player } from "$lib/player.svelte";
+  import { fileName, formatTime } from "$lib/utils";
 
-  let dragFrom = $state<number | null>(null)
-  let dragOver = $state<number | null>(null)
+  let { onclose }: { onclose: () => void } = $props();
 
-  function drop(to: number) {
-    if (dragFrom !== null) player.reorder(dragFrom, to)
-    dragFrom = dragOver = null
+  const current = $derived(
+    player.state.current !== null ? player.queue[player.state.current] : undefined,
+  );
+
+  function info(path: string) {
+    const track = library.find(path);
+    return {
+      title: track?.title ?? fileName(path),
+      artist: track?.artist ?? "Artiste inconnu",
+      duration: track?.duration,
+    };
   }
 </script>
 
-<div class="queue">
-  <h2>En cours de lecture</h2>
-  {#if player.current}
-    <div class="item now">
-      <Cover path={player.current.cover} size={48} />
-      <div class="text">
-        <span class="title">{player.current.title}</span>
-        <span class="sub">{player.current.artist || 'Artiste inconnu'} · {player.current.album}</span>
-      </div>
-      <span class="duration">{formatTime(player.current.duration)}</span>
+<aside class="queue">
+  <header>
+    <h2>File d'attente</h2>
+    <button class="close" onclick={onclose} aria-label="Fermer" title="Fermer">✕</button>
+  </header>
+
+  {#if current}
+    {@const t = info(current)}
+    <h3>En cours de lecture</h3>
+    <div class="item current" title={current}>
+      <span class="meta">
+        <span class="title">{t.title}</span>
+        <span class="artist">{t.artist}</span>
+      </span>
+      {#if t.duration !== undefined}
+        <span class="duration">{formatTime(t.duration)}</span>
+      {/if}
     </div>
-  {:else}
-    <p class="empty">Rien en cours de lecture.</p>
   {/if}
 
-  {#each [{ label: "File d'attente", from: 0, to: player.userCount }, { label: 'À suivre', from: player.userCount, to: player.queue.length }] as section (section.label)}
-    {#if section.to > section.from}
-      <h2>{section.label}</h2>
-      {#each player.queue.slice(section.from, section.to) as track, j (`${section.from + j}-${track.id}`)}
-        {@const index = section.from + j}
+  <div class="next-header">
+    <h3>Ensuite</h3>
+    {#if player.upcoming.length > 0}
+      <button class="clear" onclick={() => player.clearQueue()}>Vider</button>
+    {/if}
+  </div>
+
+  {#if player.upcoming.length === 0}
+    <p class="empty">Rien à suivre. Ajoute des titres depuis la bibliothèque.</p>
+  {:else}
+    <div class="list">
+      {#each player.upcoming as { path, index } (index)}
+        {@const t = info(path)}
         <div
-          class="item"
-          class:over={dragOver === index && dragFrom !== index}
-          role="listitem"
-          draggable="true"
-          ondragstart={(e) => {
-            dragFrom = index
-            e.dataTransfer?.setData('text/plain', String(index))
-          }}
-          ondragover={(e) => {
-            e.preventDefault()
-            dragOver = index
-          }}
-          ondragend={() => (dragFrom = dragOver = null)}
-          ondrop={(e) => {
-            e.preventDefault()
-            drop(index)
-          }}
-          ondblclick={() => player.jumpTo(index)}
+          class="item upcoming"
+          role="button"
+          title={path}
+          tabindex="0"
+          ondblclick={() => player.playIndex(index)}
+          onkeydown={(e) => e.key === "Enter" && player.playIndex(index)}
         >
-          <span class="grip"><Icon name="grip" size={16} /></span>
-          <Cover path={track.cover} size={40} />
-          <div class="text">
-            <span class="title">{track.title}</span>
-            <span class="sub">{track.artist || 'Artiste inconnu'}</span>
-          </div>
-          <span class="duration">{formatTime(track.duration)}</span>
-          <button class="icon remove" title="Retirer de la file" onclick={() => player.removeFromQueue(index)}>
-            <Icon name="close" size={14} />
+          <span class="meta">
+            <span class="title">{t.title}</span>
+            <span class="artist">{t.artist}</span>
+          </span>
+          {#if t.duration !== undefined}
+            <span class="duration">{formatTime(t.duration)}</span>
+          {/if}
+          <button
+            class="remove"
+            onclick={() => player.removeFromQueue(index)}
+            aria-label="Retirer de la file"
+            title="Retirer de la file"
+          >
+            ✕
           </button>
         </div>
       {/each}
-    {/if}
-  {/each}
-
-  {#if player.current && player.queue.length === 0}
-    <p class="empty">La file d'attente est vide.</p>
+    </div>
   {/if}
-</div>
+</aside>
 
 <style>
   .queue {
-    padding: 0 24px 24px;
-    max-width: 900px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 1.25rem 1rem;
+    overflow-y: auto;
+    background: var(--surface);
+    border-left: 1px solid var(--surface-2);
   }
+
+  header,
+  .next-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
   h2 {
-    margin: 24px 0 8px;
-    font-size: 14px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-dim);
+    margin: 0;
+    font-size: 1.1rem;
   }
+
+  h3 {
+    margin: 1.25rem 0 0.5rem;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .close,
+  .clear,
+  .remove {
+    padding: 0;
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .close:hover,
+  .clear:hover,
+  .remove:hover {
+    color: var(--text);
+  }
+
+  .clear {
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
   .item {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 6px 8px;
-    border-radius: 6px;
-    border-top: 2px solid transparent;
+    gap: 0.75rem;
+    padding: 0.45rem 0.5rem;
+    border-radius: 4px;
+    outline: none;
   }
-  .item:hover {
+
+  .item.upcoming:hover,
+  .item.upcoming:focus-visible {
     background: var(--surface-2);
   }
-  .item.over {
-    border-top-color: var(--accent);
-  }
-  .now .title {
-    color: var(--accent);
-  }
-  .grip {
-    color: var(--text-dim);
-    cursor: grab;
-  }
-  .text {
-    flex: 1;
+
+  .meta {
     display: flex;
+    flex: 1;
     flex-direction: column;
     min-width: 0;
   }
+
   .title,
-  .sub {
+  .artist {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
   .title {
-    font-weight: 500;
+    font-size: 0.9rem;
   }
-  .sub {
-    font-size: 13px;
-    color: var(--text-dim);
+
+  .current .title {
+    color: var(--accent);
   }
+
+  .artist,
   .duration {
-    font-size: 13px;
-    color: var(--text-dim);
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+
+  .duration {
     font-variant-numeric: tabular-nums;
   }
+
   .remove {
+    width: 16px;
+    font-size: 0.75rem;
     visibility: hidden;
   }
-  .item:hover .remove {
+
+  .item.upcoming:hover .remove {
     visibility: visible;
   }
+
   .empty {
-    color: var(--text-dim);
+    margin: 0.5rem 0;
+    color: var(--muted);
+    font-size: 0.85rem;
   }
 </style>

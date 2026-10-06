@@ -1,187 +1,314 @@
 <script lang="ts">
-  import { player } from '../stores/player.svelte'
-  import type { Track } from '../types'
-  import { formatTime } from '../utils'
-  import Cover from './Cover.svelte'
-  import Icon from './Icon.svelte'
-  import TrackMenu, { type MenuState } from './TrackMenu.svelte'
+  import { open } from "@tauri-apps/plugin-dialog";
+  import { library, type Track } from "$lib/library.svelte";
+  import { player } from "$lib/player.svelte";
+  import { formatTime } from "$lib/utils";
 
-  type SortKey = 'default' | 'title' | 'artist' | 'album' | 'duration'
+  let query = $state("");
 
-  let { tracks }: { tracks: Track[] } = $props()
+  const filtered = $derived.by(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return library.tracks;
+    return library.tracks.filter((t) =>
+      [t.title, t.artist, t.album].some((field) => field?.toLowerCase().includes(q)),
+    );
+  });
 
-  let sortKey = $state<SortKey>('default')
-  let sortDir = $state<1 | -1>(1)
-  let selectedId = $state<string | null>(null)
-  let menu = $state<MenuState | null>(null)
+  const error = $derived(library.error ?? player.error ?? player.state.error);
 
-  const sorted = $derived.by(() => {
-    if (sortKey === 'default') return tracks
-    const key = sortKey
-    return [...tracks].sort((a, b) => {
-      const r =
-        key === 'duration'
-          ? a.duration - b.duration
-          : a[key].localeCompare(b[key], undefined, { sensitivity: 'base' })
-      return r * sortDir
-    })
-  })
-
-  function sortBy(key: SortKey) {
-    if (sortKey === key) {
-      // Third click returns to the natural artist/album/track order.
-      if (sortDir === -1) sortKey = 'default'
-      sortDir = sortDir === 1 ? -1 : 1
-    } else {
-      sortKey = key
-      sortDir = 1
-    }
+  async function addFiles() {
+    const paths = await open({
+      multiple: true,
+      directory: false,
+      filters: [{ name: "Audio", extensions: ["mp3", "opus"] }],
+    });
+    if (paths && paths.length > 0) await library.add(paths);
   }
 
-  function openMenu(e: MouseEvent, track: Track) {
-    e.preventDefault()
-    selectedId = track.id
-    menu = { x: e.clientX, y: e.clientY, track, context: sorted }
+  /** Plays the visible list (like a Spotify playlist), starting at `index`. */
+  function playFrom(index: number) {
+    player.playFrom(
+      filtered.map((t) => t.path),
+      index,
+    );
+  }
+
+  async function removeTrack(track: Track) {
+    if (player.state.path === track.path) await player.stop();
+    await library.remove(track.path);
   }
 </script>
 
-{#snippet header(key: SortKey, label: string)}
-  <button class="th" onclick={() => sortBy(key)}>
-    {label}
-    {#if sortKey === key}<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>{/if}
-  </button>
-{/snippet}
-
-<div class="table" role="grid">
-  <div class="row head">
-    <span class="num">#</span>
-    {@render header('title', 'Titre')}
-    {@render header('album', 'Album')}
-    {@render header('duration', 'Durée')}
-  </div>
-
-  {#each sorted as track, i (track.id)}
-    {@const isCurrent = player.current?.id === track.id}
-    <div
-      class="row"
-      class:current={isCurrent}
-      class:selected={selectedId === track.id}
-      class:broken={player.unplayable.has(track.id)}
-      role="row"
-      tabindex="-1"
-      onclick={() => (selectedId = track.id)}
-      ondblclick={() => player.play(track, sorted)}
-      oncontextmenu={(e) => openMenu(e, track)}
-      onkeydown={(e) => e.key === 'Enter' && player.play(track, sorted)}
-    >
-      <span class="num">
-        {#if isCurrent && player.isPlaying}
-          <span class="eq"><i></i><i></i><i></i></span>
-        {:else}
-          <span class="idx">{i + 1}</span>
-          <button class="icon play" title="Lire" onclick={() => player.play(track, sorted)}><Icon name="play" size={14} /></button>
-        {/if}
-      </span>
-      <span class="title-cell">
-        <Cover path={track.cover} size={36} />
-        <span class="text">
-          <span class="title">{track.title}</span>
-          <span class="artist">{track.artist || 'Artiste inconnu'}</span>
-        </span>
-      </span>
-      <span class="album">{track.album}</span>
-      <span class="duration">
-        {#if player.unplayable.has(track.id)}<span class="badge" title="Format non supporté par le lecteur">non lisible</span>{/if}
-        {formatTime(track.duration)}
-      </span>
+<section class="library">
+  <header>
+    <div>
+      <h1>Bibliothèque</h1>
+      <p class="count">
+        {library.tracks.length} titre{library.tracks.length > 1 ? "s" : ""}
+      </p>
     </div>
-  {/each}
-</div>
+    <div class="actions">
+      {#if library.tracks.length > 0}
+        <input class="search" type="search" placeholder="Rechercher" bind:value={query} />
+      {/if}
+      <button class="add" onclick={addFiles} disabled={library.adding}>
+        {library.adding ? "Ajout…" : "Ajouter des titres"}
+      </button>
+    </div>
+  </header>
 
-<TrackMenu bind:menu />
+  {#if error}
+    <p class="error">{error}</p>
+  {/if}
+
+  {#if library.tracks.length === 0}
+    <div class="empty">
+      <p>Ta bibliothèque est vide.</p>
+      <p class="muted">Ajoute des fichiers mp3 pour commencer.</p>
+    </div>
+  {:else if filtered.length === 0}
+    <div class="empty">
+      <p class="muted">Aucun résultat pour « {query} ».</p>
+    </div>
+  {:else}
+    <div class="table" role="table">
+      <div class="row head" role="row">
+        <span role="columnheader">#</span>
+        <span role="columnheader">Titre</span>
+        <span role="columnheader">Album</span>
+        <span role="columnheader" class="right">Durée</span>
+        <span></span>
+      </div>
+      {#each filtered as track, i (track.path)}
+        {@const current = player.state.path === track.path}
+        {@const playing = current && player.state.playing}
+        <div
+          class="row track"
+          class:current
+          role="row"
+          tabindex="0"
+          ondblclick={() => playFrom(i)}
+          onkeydown={(e) => e.key === "Enter" && playFrom(i)}
+          title={track.path}
+        >
+          <span class="index">
+            <span class="num">{playing ? "▶" : i + 1}</span>
+            <button
+              class="row-play"
+              onclick={() => (current ? player.togglePlay() : playFrom(i))}
+              aria-label={playing ? "Pause" : "Lire"}
+            >
+              {#if playing}
+                <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+              {:else}
+                <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+              {/if}
+            </button>
+          </span>
+          <span class="title-cell">
+            <span class="title">{track.title}</span>
+            <span class="artist">{track.artist ?? "Artiste inconnu"}</span>
+          </span>
+          <span class="album">{track.album ?? ""}</span>
+          <span class="duration right">{formatTime(track.duration)}</span>
+          <span class="row-actions">
+            <button
+              class="row-action"
+              onclick={() => player.enqueue([track.path])}
+              aria-label="Ajouter à la file d'attente"
+              title="Ajouter à la file d'attente"
+            >
+              <svg viewBox="0 0 24 24"><path d="M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm14-2v-3h2v3h3v2h-3v3h-2v-3h-3v-2z" /></svg>
+            </button>
+            <button
+              class="row-action"
+              onclick={() => removeTrack(track)}
+              aria-label="Retirer de la bibliothèque"
+              title="Retirer de la bibliothèque"
+            >
+              ✕
+            </button>
+          </span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+</section>
 
 <style>
-  .table {
-    display: flex;
-    flex-direction: column;
-    padding: 0 16px 16px;
+  .library {
+    padding: 1.5rem 2rem;
+    overflow-y: auto;
+    min-height: 0;
   }
+
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 2rem;
+  }
+
+  .count {
+    margin: 0.25rem 0 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .search {
+    width: 200px;
+    padding: 0.5rem 0.9rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.85rem;
+    outline: none;
+  }
+
+  .search:focus {
+    border-color: var(--muted);
+  }
+
+  .add {
+    padding: 0.6rem 1.4rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #000;
+    font-weight: 700;
+  }
+
+  .add:not(:disabled):hover {
+    transform: scale(1.04);
+  }
+
+  .error {
+    margin: 0 0 1rem;
+    color: #f15e6c;
+    white-space: pre-line;
+  }
+
+  .empty {
+    padding: 4rem 0;
+    text-align: center;
+  }
+
+  .empty p {
+    margin: 0.3rem 0;
+  }
+
+  .muted {
+    color: var(--muted);
+  }
+
   .row {
     display: grid;
-    grid-template-columns: 40px minmax(0, 3fr) minmax(0, 2fr) 110px;
+    grid-template-columns: 2.5rem minmax(0, 3fr) minmax(0, 2fr) 4rem 4rem;
     align-items: center;
-    gap: 12px;
-    padding: 4px 8px;
-    border-radius: 6px;
-    user-select: none;
+    gap: 1rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 4px;
   }
-  .row:not(.head):hover {
+
+  .head {
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--surface-2);
+    border-radius: 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .track {
+    color: var(--muted);
+    font-size: 0.9rem;
+    cursor: default;
+    outline: none;
+  }
+
+  .track:hover,
+  .track:focus-visible {
     background: var(--surface-2);
   }
-  .row.selected {
-    background: var(--surface-3);
+
+  .right {
+    text-align: right;
   }
-  .row.current .title {
-    color: var(--accent);
-  }
-  .row.broken {
-    opacity: 0.5;
-  }
-  .head {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    border-radius: 0;
-    padding-block: 8px;
-    margin-bottom: 4px;
-    font-size: 12px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-  .th {
-    text-align: left;
-    color: inherit;
-    font: inherit;
-    letter-spacing: inherit;
-    text-transform: inherit;
-  }
-  .th:hover {
-    color: var(--text);
-  }
-  .arrow {
-    font-size: 9px;
-    margin-left: 4px;
-  }
-  .num {
+
+  .index {
     display: grid;
     place-items: center;
-    color: var(--text-dim);
     font-variant-numeric: tabular-nums;
-    font-size: 13px;
   }
-  .play {
-    display: none;
+
+  .index > * {
+    grid-area: 1 / 1;
   }
-  .row:hover .play {
+
+  .row-play,
+  .row-action {
     display: grid;
+    place-items: center;
+    padding: 0;
+    background: transparent;
+    color: var(--text);
+    visibility: hidden;
   }
-  .row:hover .idx {
-    display: none;
+
+  .row-play svg,
+  .row-action svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
   }
-  .title-cell {
+
+  .track:hover .num {
+    visibility: hidden;
+  }
+
+  .track:hover .row-play,
+  .track:hover .row-action {
+    visibility: visible;
+  }
+
+  .row-actions {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
+    justify-content: flex-end;
+    gap: 0.6rem;
   }
-  .text {
+
+  .row-action {
+    width: 20px;
+    height: 20px;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .row-action:hover {
+    color: var(--text);
+  }
+
+  .title-cell {
     display: flex;
     flex-direction: column;
     min-width: 0;
   }
+
   .title,
   .artist,
   .album {
@@ -189,54 +316,21 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
   .title {
-    font-weight: 500;
+    color: var(--text);
   }
-  .artist,
-  .album {
-    font-size: 13px;
-    color: var(--text-dim);
+
+  .artist {
+    font-size: 0.8rem;
   }
+
+  .current .title,
+  .current .num {
+    color: var(--accent);
+  }
+
   .duration {
-    text-align: right;
-    font-size: 13px;
-    color: var(--text-dim);
     font-variant-numeric: tabular-nums;
-  }
-  .head .th:last-child {
-    text-align: right;
-  }
-  .badge {
-    font-size: 10px;
-    padding: 1px 5px;
-    margin-right: 6px;
-    border-radius: 4px;
-    background: var(--danger);
-    color: white;
-  }
-  .eq {
-    display: flex;
-    align-items: flex-end;
-    gap: 2px;
-    height: 14px;
-  }
-  .eq i {
-    width: 3px;
-    background: var(--accent);
-    animation: eq 0.9s ease-in-out infinite alternate;
-  }
-  .eq i:nth-child(2) {
-    animation-delay: -0.3s;
-  }
-  .eq i:nth-child(3) {
-    animation-delay: -0.6s;
-  }
-  @keyframes eq {
-    from {
-      height: 3px;
-    }
-    to {
-      height: 14px;
-    }
   }
 </style>

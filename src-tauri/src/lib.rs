@@ -1,25 +1,130 @@
+mod audio;
 mod library;
+mod opus;
+
+use audio::{AudioHandle, PlayerState, QueueState};
+use library::{Library, Track};
+use tauri::{Manager, State};
+
+#[tauri::command]
+fn play_queue(
+    audio: State<AudioHandle>,
+    tracks: Vec<String>,
+    start: usize,
+) -> Result<QueueState, String> {
+    audio.play_queue(tracks, start)
+}
+
+#[tauri::command]
+fn enqueue(audio: State<AudioHandle>, tracks: Vec<String>) -> QueueState {
+    audio.enqueue(tracks)
+}
+
+#[tauri::command]
+fn play_index(audio: State<AudioHandle>, index: usize) -> Result<(), String> {
+    audio.play_index(index)
+}
+
+#[tauri::command]
+fn remove_from_queue(audio: State<AudioHandle>, index: usize) -> Result<QueueState, String> {
+    audio.remove_from_queue(index)
+}
+
+#[tauri::command]
+fn clear_queue(audio: State<AudioHandle>) -> QueueState {
+    audio.clear_queue()
+}
+
+#[tauri::command]
+fn get_queue(audio: State<AudioHandle>) -> QueueState {
+    audio.queue()
+}
+
+#[tauri::command]
+fn next(audio: State<AudioHandle>) -> Result<(), String> {
+    audio.next()
+}
+
+#[tauri::command]
+fn previous(audio: State<AudioHandle>) -> Result<(), String> {
+    audio.previous()
+}
+
+#[tauri::command]
+fn play(audio: State<AudioHandle>) -> Result<(), String> {
+    audio.play()
+}
+
+#[tauri::command]
+fn pause(audio: State<AudioHandle>) -> Result<(), String> {
+    audio.pause()
+}
+
+#[tauri::command]
+fn stop(audio: State<AudioHandle>) -> Result<(), String> {
+    audio.stop()
+}
+
+#[tauri::command]
+fn seek(audio: State<AudioHandle>, secs: f64) -> Result<(), String> {
+    audio.seek(secs)
+}
+
+#[tauri::command]
+fn set_volume(audio: State<AudioHandle>, volume: f32) -> Result<(), String> {
+    audio.set_volume(volume)
+}
+
+#[tauri::command]
+fn get_state(audio: State<AudioHandle>) -> PlayerState {
+    audio.state()
+}
+
+#[tauri::command]
+fn get_library(library: State<Library>) -> Vec<Track> {
+    library.tracks()
+}
+
+// Async so reading tags of many files doesn't block the main thread.
+#[tauri::command]
+async fn add_tracks(library: State<'_, Library>, paths: Vec<String>) -> Result<Vec<Track>, String> {
+    library.add(&paths)
+}
+
+#[tauri::command]
+fn remove_track(library: State<Library>, path: String) -> Result<Vec<Track>, String> {
+    library.remove(&path)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
-    .plugin(tauri_plugin_dialog::init())
-    .plugin(tauri_plugin_store::Builder::default().build())
-    .setup(|app| {
-      if cfg!(debug_assertions) {
-        app.handle().plugin(
-          tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Info)
-            .build(),
-        )?;
-      }
-      Ok(())
-    })
-    .invoke_handler(tauri::generate_handler![
-      library::scan_folders,
-      library::read_files,
-      library::classify_paths
-    ])
-    .run(tauri::generate_context!())
-    .expect("error while building tauri application");
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AudioHandle::spawn())
+        .setup(|app| {
+            let file = app.path().app_data_dir()?.join("library.json");
+            app.manage(Library::load(file));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            play_queue,
+            enqueue,
+            play_index,
+            remove_from_queue,
+            clear_queue,
+            get_queue,
+            next,
+            previous,
+            play,
+            pause,
+            stop,
+            seek,
+            set_volume,
+            get_state,
+            get_library,
+            add_tracks,
+            remove_track
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }

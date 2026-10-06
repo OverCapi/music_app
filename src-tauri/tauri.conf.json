@@ -1,35 +1,26 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Music",
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "music_app",
   "version": "0.1.0",
-  "identifier": "dev.capi.music",
+  "identifier": "com.capi.musicapp",
   "build": {
-    "frontendDist": "../dist",
+    "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../build"
   },
   "app": {
     "windows": [
       {
-        "title": "Music",
-        "width": 1200,
-        "height": 780,
-        "resizable": true,
-        "fullscreen": false,
-        "minWidth": 800,
-        "minHeight": 500,
-        "dragDropEnabled": true
+        "title": "Music App",
+        "width": 960,
+        "height": 640,
+        "minWidth": 640,
+        "minHeight": 480
       }
     ],
     "security": {
-      "csp": null,
-      "assetProtocol": {
-        "enable": true,
-        "scope": [
-          "**"
-        ]
-      }
+      "csp": null
     }
   },
   "bundle": {
@@ -41,9 +32,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "android": {
-      "debugApplicationIdSuffix": ".debug"
-    }
+    ]
   }
 }

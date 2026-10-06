@@ -1,185 +1,255 @@
 <script lang="ts">
-  import { player } from '../stores/player.svelte'
-  import { formatTime } from '../utils'
-  import Cover from './Cover.svelte'
-  import Icon from './Icon.svelte'
+  import { player } from "$lib/player.svelte";
+  import { library } from "$lib/library.svelte";
+  import { fileName, formatTime } from "$lib/utils";
 
-  // While dragging the seek bar we show the preview position and only seek on release.
-  let scrubbing = $state<number | null>(null)
-  const shownPosition = $derived(scrubbing ?? player.position)
-  const progress = $derived(player.duration ? (shownPosition / player.duration) * 100 : 0)
-  const volumePct = $derived((player.muted ? 0 : player.volume) * 100)
+  let { queueOpen = $bindable(false) }: { queueOpen?: boolean } = $props();
+
+  // While the user drags the progress bar, show the drag value instead of the polled position.
+  let scrubbing = $state(false);
+  let scrubValue = $state(0);
+
+  const s = $derived(player.state);
+  const track = $derived(library.find(s.path));
+  const position = $derived(scrubbing ? scrubValue : s.position);
+  const progress = $derived(s.duration > 0 ? (position / s.duration) * 100 : 0);
+
+  function onScrubInput(e: Event) {
+    scrubbing = true;
+    scrubValue = Number((e.currentTarget as HTMLInputElement).value);
+  }
+
+  async function onScrubChange(e: Event) {
+    await player.seek(Number((e.currentTarget as HTMLInputElement).value));
+    scrubbing = false;
+  }
 </script>
 
-<footer>
-  <div class="now">
-    {#if player.current}
-      <Cover path={player.current.cover} size={56} />
-      <div class="text">
-        <span class="title">{player.current.title}</span>
-        <span class="artist">{player.current.artist || 'Artiste inconnu'}</span>
+<footer class="player-bar">
+  <div class="now-playing">
+    {#if s.path}
+      <div class="cover" aria-hidden="true">♪</div>
+      <div class="meta">
+        <span class="title" title={s.path}>{track?.title ?? fileName(s.path)}</span>
+        <span class="artist">{track?.artist ?? "Artiste inconnu"}</span>
       </div>
     {/if}
   </div>
 
   <div class="center">
     <div class="controls">
-      <button class="icon toggle" class:on={player.shuffle} title="Lecture aléatoire" onclick={() => player.toggleShuffle()}>
-        <Icon name="shuffle" />
-      </button>
-      <button class="icon" title="Précédent" onclick={() => player.prev()} disabled={!player.current}>
-        <Icon name="prev" size={20} />
-      </button>
-      <button class="play" title={player.isPlaying ? 'Pause' : 'Lecture'} onclick={() => player.toggle()} disabled={!player.current}>
-        <Icon name={player.isPlaying ? 'pause' : 'play'} size={20} />
-      </button>
-      <button class="icon" title="Suivant" onclick={() => player.next()} disabled={!player.current}>
-        <Icon name="next" size={20} />
+      <button
+        class="icon"
+        onclick={() => player.stop()}
+        disabled={!s.loaded}
+        aria-label="Stop"
+        title="Stop"
+      >
+        <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
       </button>
       <button
-        class="icon toggle"
-        class:on={player.repeat !== 'off'}
-        title={{ off: 'Répéter : non', all: 'Répéter : tout', one: 'Répéter : ce titre' }[player.repeat]}
-        onclick={() => player.cycleRepeat()}
+        class="icon"
+        onclick={() => player.previous()}
+        disabled={s.current === null}
+        aria-label="Précédent"
+        title="Précédent"
       >
-        <Icon name="repeat" />
-        {#if player.repeat === 'one'}<span class="one">1</span>{/if}
+        <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3.5 7L19 5v14z" /></svg>
+      </button>
+      <button
+        class="icon play"
+        onclick={() => player.togglePlay()}
+        disabled={player.queue.length === 0}
+        aria-label={s.playing ? "Pause" : "Lecture"}
+        title={s.playing ? "Pause" : "Lecture"}
+      >
+        {#if s.playing}
+          <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+        {:else}
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+        {/if}
+      </button>
+      <button
+        class="icon"
+        onclick={() => player.next()}
+        disabled={player.upcoming.length === 0}
+        aria-label="Suivant"
+        title="Suivant"
+      >
+        <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5l9.5 7L5 19z" /></svg>
       </button>
     </div>
 
     <div class="progress">
-      <span class="time">{formatTime(shownPosition)}</span>
+      <span class="time">{formatTime(position)}</span>
       <input
         type="range"
         min="0"
-        max={player.duration || 0}
+        max={s.duration || 0}
         step="0.1"
-        value={shownPosition}
-        style:--pct="{progress}%"
-        disabled={!player.current}
+        value={position}
+        disabled={!s.loaded || s.duration === 0}
+        oninput={onScrubInput}
+        onchange={onScrubChange}
+        style:--fill="{progress}%"
         aria-label="Position"
-        oninput={(e) => (scrubbing = e.currentTarget.valueAsNumber)}
-        onchange={(e) => {
-          player.seek(e.currentTarget.valueAsNumber)
-          scrubbing = null
-        }}
       />
-      <span class="time">{formatTime(player.duration)}</span>
+      <span class="time">{formatTime(s.duration)}</span>
     </div>
   </div>
 
   <div class="volume">
-    <button class="icon" title={player.muted ? 'Réactiver le son' : 'Couper le son'} onclick={() => player.toggleMute()}>
-      <Icon name={player.muted || player.volume === 0 ? 'mute' : 'volume'} />
+    <button
+      class="icon"
+      class:active={queueOpen}
+      onclick={() => (queueOpen = !queueOpen)}
+      aria-label="File d'attente"
+      aria-pressed={queueOpen}
+      title="File d'attente"
+    >
+      <svg viewBox="0 0 24 24"><path d="M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm13-3v8l6-4z" /></svg>
     </button>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z" /></svg>
     <input
       type="range"
       min="0"
       max="1"
       step="0.01"
-      value={player.muted ? 0 : player.volume}
-      style:--pct="{volumePct}%"
+      value={s.volume}
+      oninput={(e) => player.setVolume(Number(e.currentTarget.value))}
+      style:--fill="{s.volume * 100}%"
       aria-label="Volume"
-      oninput={(e) => player.setVolume(e.currentTarget.valueAsNumber)}
     />
   </div>
 </footer>
 
 <style>
-  footer {
-    grid-column: 1 / -1;
+  .player-bar {
     display: grid;
-    grid-template-columns: minmax(180px, 1fr) minmax(320px, 2fr) minmax(140px, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
     align-items: center;
-    gap: 16px;
-    padding: 12px 20px;
-    background: var(--surface-1);
-    border-top: 1px solid var(--border);
+    gap: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+    border-top: 1px solid var(--surface-2);
   }
-  .now {
+
+  .now-playing {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 0.75rem;
     min-width: 0;
   }
-  .text {
+
+  .cover {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #2a2a2a, #3e3e3e);
+    color: var(--muted);
+    font-size: 1.4rem;
+  }
+
+  .meta {
     display: flex;
     flex-direction: column;
     min-width: 0;
   }
+
   .title,
   .artist {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
   .title {
-    font-weight: 600;
+    font-size: 0.9rem;
   }
+
   .artist {
-    font-size: 13px;
-    color: var(--text-dim);
+    color: var(--muted);
+    font-size: 0.75rem;
   }
+
   .center {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: 0.4rem;
   }
+
   .controls {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 0.75rem;
   }
-  .play {
+
+  .icon {
     display: grid;
     place-items: center;
-    width: 38px;
-    height: 38px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
     border-radius: 50%;
-    background: var(--text);
-    color: var(--bg);
-    transition: transform 0.1s;
+    background: transparent;
+    color: var(--muted);
   }
-  .play:hover:not(:disabled) {
-    transform: scale(1.06);
+
+  .icon:not(:disabled):hover {
+    color: var(--text);
   }
-  .toggle {
-    position: relative;
-  }
-  .toggle.on {
+
+  .icon.active {
     color: var(--accent);
   }
-  .one {
-    position: absolute;
-    top: -4px;
-    right: -6px;
-    font-size: 9px;
-    font-weight: 700;
+
+  .icon.active:hover {
+    color: var(--accent);
   }
-  .progress {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
+
+  .icon.play {
+    width: 36px;
+    height: 36px;
+    background: var(--text);
+    color: #000;
   }
-  .time {
-    min-width: 40px;
-    font-size: 12px;
-    color: var(--text-dim);
-    font-variant-numeric: tabular-nums;
-    text-align: center;
+
+  .icon.play:not(:disabled):hover {
+    transform: scale(1.06);
+    color: #000;
   }
-  .progress input {
-    flex: 1;
+
+  svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
   }
+
+  .progress,
   .volume {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
+    gap: 0.6rem;
+    width: 100%;
   }
+
+  .volume {
+    justify-content: flex-end;
+    color: var(--muted);
+  }
+
   .volume input {
-    width: 110px;
+    flex: 0 1 120px;
+  }
+
+  .time {
+    min-width: 3ch;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
   }
 </style>
