@@ -7,6 +7,8 @@ export interface Track {
   album: string | null;
   duration: number;
   added_at: number;
+  /** Set for tracks downloaded from YouTube / YouTube Music. */
+  youtube_id: string | null;
 }
 
 class Library {
@@ -43,6 +45,10 @@ class Library {
     } catch (e) {
       this.error = String(e);
     }
+  }
+
+  hasYoutubeId(id: string): boolean {
+    return this.tracks.some((t) => t.youtube_id === id);
   }
 
   find(path: string | null): Track | undefined {

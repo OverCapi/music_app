@@ -5,18 +5,32 @@
   import LibraryView from "$lib/components/LibraryView.svelte";
   import PlayerBar from "$lib/components/PlayerBar.svelte";
   import QueueView from "$lib/components/QueueView.svelte";
+  import SearchView from "$lib/components/SearchView.svelte";
+  import Sidebar, { type View } from "$lib/components/Sidebar.svelte";
+  import { search } from "$lib/search.svelte";
+  import { downloads } from "$lib/downloads.svelte";
 
   let queueOpen = $state(false);
+  let view = $state<View>("library");
 
   onMount(() => {
     library.refresh();
     player.init();
-    return () => player.stopPolling();
+    const unlisteners = [search.listen(), downloads.listen()];
+    return () => {
+      player.stopPolling();
+      unlisteners.forEach((p) => p.then((fn) => fn()));
+    };
   });
 </script>
 
 <main class:queue-open={queueOpen}>
-  <LibraryView />
+  <Sidebar bind:view />
+  {#if view === "library"}
+    <LibraryView />
+  {:else}
+    <SearchView />
+  {/if}
   {#if queueOpen}
     <QueueView onclose={() => (queueOpen = false)} />
   {/if}
@@ -88,13 +102,13 @@
 
   main {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 220px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
     height: 100vh;
   }
 
   main.queue-open {
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: 220px minmax(0, 1fr) 320px;
   }
 
   main > :global(footer) {

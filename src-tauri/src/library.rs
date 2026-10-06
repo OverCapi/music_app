@@ -18,6 +18,9 @@ pub struct Track {
     pub duration: f64,
     /// Unix timestamp (seconds).
     pub added_at: u64,
+    /// Set for tracks downloaded from YouTube / YouTube Music.
+    #[serde(default)]
+    pub youtube_id: Option<String>,
 }
 
 pub struct Library {
@@ -72,6 +75,24 @@ impl Library {
         }
     }
 
+    /// Adds (or updates) a file downloaded from YouTube.
+    pub fn add_downloaded(&self, path: &str, youtube_id: &str) -> Result<(), String> {
+        let mut track = read_track(Path::new(path))?;
+        track.youtube_id = Some(youtube_id.to_owned());
+        let mut tracks = self.tracks.lock().unwrap();
+        tracks.retain(|t| t.path != path);
+        tracks.push(track);
+        self.save(&tracks)
+    }
+
+    pub fn has_youtube_id(&self, youtube_id: &str) -> bool {
+        self.tracks
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|t| t.youtube_id.as_deref() == Some(youtube_id))
+    }
+
     pub fn remove(&self, path: &str) -> Result<Vec<Track>, String> {
         let mut tracks = self.tracks.lock().unwrap();
         tracks.retain(|t| t.path != path);
@@ -114,5 +135,6 @@ fn read_track(path: &Path) -> Result<Track, String> {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0),
+        youtube_id: None,
     })
 }

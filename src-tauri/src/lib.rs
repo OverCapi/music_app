@@ -1,10 +1,14 @@
 mod audio;
+mod downloads;
 mod library;
 mod opus;
+mod youtube;
 
 use audio::{AudioHandle, PlayerState, QueueState};
+use downloads::Downloads;
 use library::{Library, Track};
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
+use youtube::{SearchResponse, SearchSource, YoutubeSearch};
 
 #[tauri::command]
 fn play_queue(
@@ -96,14 +100,48 @@ fn remove_track(library: State<Library>, path: String) -> Result<Vec<Track>, Str
     library.remove(&path)
 }
 
+#[tauri::command]
+async fn search_youtube(
+    app: AppHandle,
+    search: State<'_, YoutubeSearch>,
+    query: String,
+    source: SearchSource,
+    offset: u32,
+    search_id: Option<u64>,
+) -> Result<SearchResponse, String> {
+    search.search(app, &query, source, offset, search_id).await
+}
+
+#[tauri::command]
+fn download_track(
+    app: AppHandle,
+    downloads: State<Downloads>,
+    id: String,
+    url: String,
+) -> Result<(), String> {
+    downloads.start(app, id, url)
+}
+
+#[tauri::command]
+fn cancel_download(app: AppHandle, downloads: State<Downloads>, id: String) {
+    downloads.cancel(&app, &id);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AudioHandle::spawn())
+        .manage(YoutubeSearch::default())
         .setup(|app| {
             let file = app.path().app_data_dir()?.join("library.json");
             app.manage(Library::load(file));
+            let music_dir = app
+                .path()
+                .audio_dir()
+                .map(|dir| dir.join("Music App"))
+                .or_else(|_| app.path().app_data_dir().map(|dir| dir.join("music")))?;
+            app.manage(Downloads::new(music_dir));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -123,7 +161,10 @@ pub fn run() {
             get_state,
             get_library,
             add_tracks,
-            remove_track
+            remove_track,
+            search_youtube,
+            download_track,
+            cancel_download
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

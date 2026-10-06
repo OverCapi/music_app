@@ -8,3 +8,9 @@ export function formatTime(secs: number): string {
 export function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
+
+const viewsFormat = new Intl.NumberFormat("fr-FR", { notation: "compact", maximumFractionDigits: 1 });
+
+export function formatViews(views: number): string {
+  return `${viewsFormat.format(views)} vues`;
+}
