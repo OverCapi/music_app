@@ -1,0 +1,124 @@
+:root {
+  --bg: #121214;
+  --surface-1: #18181b;
+  --surface-2: #222226;
+  --surface-3: #2c2c31;
+  --border: #2e2e33;
+  --text: #f2f2f3;
+  --text-dim: #9a9aa3;
+  --accent: #1ed760;
+  --on-accent: #0b0b0c;
+  --danger: #e5484d;
+
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  cursor: default;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--text-dim);
+}
+
+button.icon:hover:not(:disabled) {
+  color: var(--text);
+}
+
+button.primary,
+button.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+button.secondary {
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+button.secondary:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+/* Range sliders (seek + volume): filled up to --pct. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--text) var(--pct, 0%), var(--surface-3) var(--pct, 0%));
+  cursor: pointer;
+  margin: 0;
+}
+
+input[type='range']:hover:not(:disabled) {
+  background: linear-gradient(to right, var(--accent) var(--pct, 0%), var(--surface-3) var(--pct, 0%));
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text);
+  opacity: 0;
+}
+
+input[type='range']:hover::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+input[type='range']:disabled {
+  cursor: default;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 5px;
+  border: 2px solid var(--bg);
+}
