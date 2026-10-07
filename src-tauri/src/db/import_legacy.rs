@@ -1,6 +1,7 @@
 //! One-time import of the JSON files written by older versions
 //! (`library.json`, `playlists.json`, `account.json`). Each imported file is renamed
-//! to `*.json.bak` so the import never runs twice.
+//! to `*.json.bak`; the `legacy_imported` setting, written in the same transaction,
+//! guarantees the import never runs twice even if a rename fails.
 
 use std::path::{Path, PathBuf};
 
@@ -38,6 +39,16 @@ struct LegacyAccount {
 }
 
 pub fn run(conn: &mut Connection, data_dir: &Path) -> AppResult<()> {
+    let done: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'legacy_imported'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if done.is_some() {
+        return Ok(());
+    }
     let library = read::<Vec<LegacyTrack>>(data_dir, "library.json");
     let playlists = read::<Vec<LegacyPlaylist>>(data_dir, "playlists.json");
     let account = read::<LegacyAccount>(data_dir, "account.json");
@@ -109,12 +120,18 @@ pub fn run(conn: &mut Connection, data_dir: &Path) -> AppResult<()> {
         }
         imported.push(file);
     }
+    tx.execute(
+        "INSERT INTO settings (key, value) VALUES ('legacy_imported', '1')",
+        [],
+    )?;
     tx.commit()?;
 
     for file in imported {
         let mut bak = file.clone().into_os_string();
         bak.push(".bak");
-        std::fs::rename(&file, bak)?;
+        if let Err(e) = std::fs::rename(&file, bak) {
+            tracing::warn!("could not rename {}: {e}", file.display());
+        }
     }
     Ok(())
 }
@@ -187,6 +204,7 @@ mod tests {
         assert_eq!(
             settings,
             [
+                ("legacy_imported".to_owned(), "1".to_owned()),
                 ("server_url".to_owned(), "http://s".to_owned()),
                 ("username".to_owned(), "bob".to_owned())
             ]
