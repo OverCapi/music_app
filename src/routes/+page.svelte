@@ -5,7 +5,8 @@
   import { player } from "#lib/stores/player.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
   import { attempt } from "#lib/stores/toasts.svelte.ts";
-  import { plural } from "#lib/format.ts";
+  import { formatTotal, plural } from "#lib/format.ts";
+  import TrackCollection from "#lib/components/ui/TrackCollection.svelte";
   import TrackTable from "#lib/components/ui/TrackTable.svelte";
   import EnqueueButton from "#lib/components/library/EnqueueButton.svelte";
   import AddToPlaylist from "#lib/components/playlists/AddToPlaylist.svelte";
@@ -20,6 +21,8 @@
       [t.title, t.artist, t.album].some((field) => field?.toLowerCase().includes(q)),
     );
   });
+
+  const totalDuration = $derived(library.tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0));
 
   async function addFiles() {
     const paths = await attempt(() =>
@@ -50,84 +53,68 @@
 </script>
 
 <section class="view">
-  <header>
-    <div>
-      <h1>Bibliothèque</h1>
-      <p class="count">{plural(library.tracks.length, "titre")}</p>
-    </div>
-    <div class="actions">
+  <TrackCollection
+    kind="Bibliothèque"
+    name="Bibliothèque"
+    meta={plural(library.tracks.length, "titre") +
+      (library.tracks.length > 0 ? ` · ${formatTotal(totalDuration)}` : "")}
+    icon="library"
+    playLabel="Lire la bibliothèque"
+    playDisabled={filtered.length === 0}
+    onplay={() => playFrom(0)}
+  >
+    {#snippet toolbar()}
       {#if library.tracks.length > 0}
         <input class="search" type="search" placeholder="Rechercher" bind:value={query} />
       {/if}
       <button class="pill primary" onclick={addFiles} disabled={library.adding}>
         {library.adding ? "Ajout…" : "Ajouter des titres"}
       </button>
-    </div>
-  </header>
+    {/snippet}
 
-  {#if library.tracks.length === 0}
-    <div class="empty">
-      <p>Ta bibliothèque est vide.</p>
-      <p class="muted">Ajoute des fichiers mp3 pour commencer.</p>
-    </div>
-  {:else if filtered.length === 0}
-    <div class="empty">
-      <p class="muted">Aucun résultat pour « {query} ».</p>
-    </div>
-  {:else}
-    <TrackTable
-      tracks={filtered}
-      onplay={playFrom}
-      actionsWidth={group.isActive ? "7.5rem" : undefined}
-    >
-      {#snippet actions(track)}
-        {#if group.isActive && track.youtube_id}
-          <AddToGroup
-            entry={{
-              youtubeId: track.youtube_id,
-              title: track.title,
-              artist: track.artist,
-              duration: track.duration || null,
-            }}
-          />
-        {/if}
-        <EnqueueButton trackId={track.id} />
-        <AddToPlaylist trackId={track.id} />
-        <button
-          class="row-action"
-          onclick={() => removeTrack(track)}
-          aria-label={removeLabel(track)}
-          title={removeLabel(track)}
-        >
-          ✕
-        </button>
-      {/snippet}
-    </TrackTable>
-  {/if}
+    {#if library.tracks.length === 0}
+      <div class="empty">
+        <p>Ta bibliothèque est vide.</p>
+        <p class="muted">Ajoute des fichiers mp3 pour commencer.</p>
+      </div>
+    {:else if filtered.length === 0}
+      <div class="empty">
+        <p class="muted">Aucun résultat pour « {query} ».</p>
+      </div>
+    {:else}
+      <TrackTable
+        tracks={filtered}
+        onplay={playFrom}
+        actionsWidth={group.isActive ? "7.5rem" : undefined}
+      >
+        {#snippet actions(track)}
+          {#if group.isActive && track.youtube_id}
+            <AddToGroup
+              entry={{
+                youtubeId: track.youtube_id,
+                title: track.title,
+                artist: track.artist,
+                duration: track.duration || null,
+              }}
+            />
+          {/if}
+          <EnqueueButton trackId={track.id} />
+          <AddToPlaylist trackId={track.id} />
+          <button
+            class="row-action"
+            onclick={() => removeTrack(track)}
+            aria-label={removeLabel(track)}
+            title={removeLabel(track)}
+          >
+            ✕
+          </button>
+        {/snippet}
+      </TrackTable>
+    {/if}
+  </TrackCollection>
 </section>
 
 <style>
-  header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .count {
-    margin: 0.25rem 0 0;
-    color: var(--muted);
-    font-size: 0.85rem;
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
   .search {
     width: 200px;
     padding: 0.5rem 0.9rem;
