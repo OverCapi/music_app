@@ -6,3 +6,4 @@ target
 pnpm-lock.yaml
 src/lib/bindings.ts
 *.md
+.claude

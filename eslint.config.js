@@ -5,7 +5,9 @@ import globals from "globals";
 import ts from "typescript-eslint";
 
 export default ts.config(
-  { ignores: ["build/", ".svelte-kit/", "src-tauri/", "target/", "src/lib/bindings.ts"] },
+  {
+    ignores: [".claude/", "build/", ".svelte-kit/", "src-tauri/", "target/", "src/lib/bindings.ts"],
+  },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...svelte.configs.recommended,
@@ -15,7 +17,12 @@ export default ts.config(
   {
     files: ["**/*.svelte", "**/*.svelte.ts"],
     languageOptions: {
-      parserOptions: { projectService: true, extraFileExtensions: [".svelte"], parser: ts.parser },
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+        extraFileExtensions: [".svelte"],
+        parser: ts.parser,
+      },
     },
   },
 );
