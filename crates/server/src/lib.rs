@@ -5,8 +5,10 @@ mod db;
 pub mod group;
 mod hub;
 
+use std::fmt::Display;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -22,16 +24,38 @@ use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tower_http::cors::CorsLayer;
+use tower_http::trace::TraceLayer;
 
 use db::{AuthError, Db};
 use hub::Hub;
-
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// Keeps idle NAT mappings open and detects peers that vanished without a close frame.
 const PING_INTERVAL: Duration = Duration::from_secs(20);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_FRAME_BYTES: usize = 64 * 1024;
+
+/// Startup failures (the server itself never stops on a request error).
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{var} {value:?}: {reason}")]
+    Env {
+        var: &'static str,
+        value: String,
+        reason: String,
+    },
+    #[error("cannot open database {}: {source}", path.display())]
+    Database {
+        path: PathBuf,
+        source: rusqlite_migration::Error,
+    },
+    #[error("cannot listen on {addr}: {source}")]
+    Listen {
+        addr: SocketAddr,
+        source: std::io::Error,
+    },
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -55,21 +79,34 @@ impl Config {
     /// Reads `MUSIC_SERVER_ADDR`, `MUSIC_SERVER_DB` and `MUSIC_SERVER_READY_TIMEOUT_MS`.
     pub fn from_env() -> Result<Self, Error> {
         let mut config = Self::default();
-        if let Ok(addr) = std::env::var("MUSIC_SERVER_ADDR") {
-            config.addr = addr
-                .parse()
-                .map_err(|e| format!("MUSIC_SERVER_ADDR {addr:?}: {e}"))?;
+        if let Some(addr) = env("MUSIC_SERVER_ADDR")? {
+            config.addr = addr;
         }
-        if let Ok(path) = std::env::var("MUSIC_SERVER_DB") {
-            config.db_path = path.into();
+        if let Some(path) = env("MUSIC_SERVER_DB")? {
+            config.db_path = path;
         }
-        if let Ok(ms) = std::env::var("MUSIC_SERVER_READY_TIMEOUT_MS") {
-            let ms: u64 = ms
-                .parse()
-                .map_err(|e| format!("MUSIC_SERVER_READY_TIMEOUT_MS {ms:?}: {e}"))?;
+        if let Some(ms) = env("MUSIC_SERVER_READY_TIMEOUT_MS")? {
             config.ready_timeout = Duration::from_millis(ms);
         }
         Ok(config)
+    }
+}
+
+/// Parses an environment variable, `None` if unset.
+fn env<T: FromStr>(var: &'static str) -> Result<Option<T>, Error>
+where
+    T::Err: Display,
+{
+    let Ok(value) = std::env::var(var) else {
+        return Ok(None);
+    };
+    match value.parse() {
+        Ok(parsed) => Ok(Some(parsed)),
+        Err(e) => Err(Error::Env {
+            var,
+            value,
+            reason: e.to_string(),
+        }),
     }
 }
 
@@ -81,8 +118,10 @@ struct AppState {
 
 /// Serves until the listener fails. `config.addr` is ignored (the listener is already bound).
 pub async fn serve(listener: TcpListener, config: Config) -> Result<(), Error> {
-    let db = Db::open(&config.db_path)
-        .map_err(|e| format!("cannot open database {}: {e}", config.db_path.display()))?;
+    let db = Db::open(&config.db_path).map_err(|source| Error::Database {
+        path: config.db_path.clone(),
+        source,
+    })?;
     let state = AppState {
         db,
         hub: Hub::new(config.ready_timeout),
@@ -93,6 +132,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> Result<(), Error> {
         .route("/ws", get(ws))
         // Auth uses bearer tokens in bodies/queries, never cookies, so any origin is safe.
         .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http())
         .with_state(state);
     axum::serve(listener, app).await?;
     Ok(())
@@ -108,8 +148,8 @@ fn error(status: StatusCode, message: &str) -> Response {
         .into_response()
 }
 
-fn internal(e: impl std::fmt::Display) -> Response {
-    eprintln!("internal error: {e}");
+fn internal(e: impl Display) -> Response {
+    tracing::error!("internal error: {e}");
     error(
         StatusCode::INTERNAL_SERVER_ERROR,
         "Erreur interne du serveur",
@@ -139,7 +179,7 @@ fn auth_error(e: AuthError) -> Response {
         AuthError::BadCredentials => {
             error(StatusCode::UNAUTHORIZED, "Pseudo ou mot de passe incorrect")
         }
-        AuthError::Internal(e) => internal(e),
+        e => internal(e),
     }
 }
 
@@ -183,8 +223,7 @@ async fn ws(
     let username = match user {
         Ok(Some(username)) => username,
         Ok(None) => return error(StatusCode::UNAUTHORIZED, "Session invalide"),
-        Err(AuthError::Internal(e)) => return internal(e),
-        Err(_) => return error(StatusCode::UNAUTHORIZED, "Session invalide"),
+        Err(e) => return internal(e),
     };
     upgrade
         .max_message_size(MAX_FRAME_BYTES)
@@ -194,6 +233,7 @@ async fn ws(
 /// One task per connection: reads client frames and writes queued server frames.
 async fn run_socket(mut socket: WebSocket, hub: Arc<Hub>, username: String) {
     let (outbox, mut queued) = mpsc::unbounded_channel::<String>();
+    tracing::debug!(%username, "websocket connected");
     let conn = hub.connect(username, outbox);
     let mut ping =
         tokio::time::interval_at(tokio::time::Instant::now() + PING_INTERVAL, PING_INTERVAL);
@@ -228,4 +268,5 @@ async fn run_socket(mut socket: WebSocket, hub: Arc<Hub>, username: String) {
         }
     }
     hub.disconnect(conn);
+    tracing::debug!(conn, "websocket closed");
 }

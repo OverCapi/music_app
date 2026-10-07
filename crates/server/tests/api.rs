@@ -146,6 +146,17 @@ impl Client {
         })
         .await;
     }
+
+    /// Waits until the server has handled every frame sent so far on this connection
+    /// (frames are handled in order, so the `Pong` comes after them). Needed whenever
+    /// a test relies on the order of messages sent on *different* connections.
+    async fn sync(&mut self) {
+        self.send(ClientMessage::Ping { client_ms: 0 }).await;
+        match self.recv().await {
+            ServerMessage::Pong { .. } => {}
+            other => panic!("expected pong, got {other:?}"),
+        }
+    }
 }
 
 /// A creates a group and B joins it; both have consumed the join broadcasts.
@@ -339,6 +350,9 @@ async fn playing_pair(server: &Server, extra: bool) -> (Client, Client) {
         a.ready(id).await;
         b.ready(id).await;
     }
+    // B's `Ready`s must be handled before A's `Add`, or V1 is only `Preparing`
+    // and B's late `Ready` adds a broadcast. A's own frames are already ordered.
+    b.sync().await;
     a.add(V1, "One").await;
     if extra {
         a.add(V2, "Two").await;
@@ -346,8 +360,9 @@ async fn playing_pair(server: &Server, extra: bool) -> (Client, Client) {
     }
     let count = if extra { 3 } else { 1 };
     for _ in 0..count {
-        a.state().await;
-        b.state().await;
+        let state = a.state().await;
+        assert!(matches!(state.playback, Playback::Playing { .. }));
+        assert_eq!(b.state().await, state);
     }
     (a, b)
 }

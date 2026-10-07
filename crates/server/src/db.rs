@@ -2,25 +2,33 @@
 //! leaked database does not leak usable sessions.
 
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use argon2::Argon2;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
+use rusqlite_migration::{M, Migrations};
 use sha2::{Digest, Sha256};
 
-#[derive(Debug)]
-pub enum AuthError {
-    UsernameTaken,
-    BadCredentials,
-    Internal(String),
-}
+/// Schema versions, tracked in SQLite's `user_version`. Append only.
+const MIGRATION_LIST: &[M<'_>] = &[M::up(include_str!("migrations/01_init.sql"))];
+const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATION_LIST);
 
-impl From<rusqlite::Error> for AuthError {
-    fn from(e: rusqlite::Error) -> Self {
-        AuthError::Internal(e.to_string())
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum AuthError {
+    #[error("username taken")]
+    UsernameTaken,
+    #[error("bad credentials")]
+    BadCredentials,
+    #[error("database: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("password hash: {0}")]
+    PasswordHash(#[from] argon2::password_hash::Error),
+    #[error("OS random generator: {0}")]
+    Random(#[from] getrandom::Error),
+    #[error("blocking task: {0}")]
+    Join(#[from] tokio::task::JoinError),
 }
 
 /// Cheap to clone; every call runs on the blocking thread pool.
@@ -30,23 +38,12 @@ pub struct Db {
 }
 
 impl Db {
-    pub fn open(path: &Path) -> rusqlite::Result<Self> {
-        let conn = Connection::open(path)?;
-        conn.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA foreign_keys = ON;
-             CREATE TABLE IF NOT EXISTS users (
-                 id INTEGER PRIMARY KEY,
-                 username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                 password_hash TEXT NOT NULL,
-                 created_at INTEGER NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS tokens (
-                 token_hash TEXT PRIMARY KEY,
-                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                 created_at INTEGER NOT NULL
-             );",
-        )?;
+    /// Opens (or creates) the database and migrates it to the latest schema.
+    pub fn open(path: &Path) -> Result<Self, rusqlite_migration::Error> {
+        let mut conn = Connection::open(path)?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        MIGRATIONS.to_latest(&mut conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -125,7 +122,7 @@ impl Db {
         .await??)
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
+    fn lock(&self) -> MutexGuard<'_, Connection> {
         // A panic mid-query cannot leave the connection itself inconsistent.
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -134,13 +131,13 @@ impl Db {
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, AuthError> {
-    tokio::task::spawn_blocking(f)
-        .await
-        .map_err(|e| AuthError::Internal(e.to_string()))
+    Ok(tokio::task::spawn_blocking(f).await?)
 }
 
 fn issue_token(conn: &Connection, user_id: i64) -> Result<String, AuthError> {
-    let token = hex::encode(random_bytes::<32>()?);
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes)?;
+    let token = hex::encode(bytes);
     conn.execute(
         "INSERT INTO tokens (token_hash, user_id, created_at) VALUES (?1, ?2, ?3)",
         params![hash_token(&token), user_id, now_secs()],
@@ -152,28 +149,17 @@ fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
+/// PHC string with a random salt.
 fn hash_password(password: &str) -> Result<String, AuthError> {
-    let salt = SaltString::encode_b64(&random_bytes::<16>()?)
-        .map_err(|e| AuthError::Internal(e.to_string()))?;
-    Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
-        .map(|h| h.to_string())
-        .map_err(|e| AuthError::Internal(e.to_string()))
+    Ok(Argon2::default()
+        .hash_password(password.as_bytes())?
+        .to_string())
 }
 
 fn verify_password(password: &str, stored: &str) -> bool {
-    PasswordHash::new(stored).is_ok_and(|h| {
-        Argon2::default()
-            .verify_password(password.as_bytes(), &h)
-            .is_ok()
-    })
-}
-
-/// Bytes from the OS CSPRNG.
-pub fn random_bytes<const N: usize>() -> Result<[u8; N], AuthError> {
-    let mut buf = [0u8; N];
-    getrandom::fill(&mut buf).map_err(|e| AuthError::Internal(e.to_string()))?;
-    Ok(buf)
+    Argon2::default()
+        .verify_password(password.as_bytes(), stored)
+        .is_ok()
 }
 
 fn now_secs() -> i64 {
@@ -181,4 +167,23 @@ fn now_secs() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrations_are_valid() {
+        MIGRATIONS.validate().unwrap();
+    }
+
+    #[test]
+    fn passwords() {
+        let hash = hash_password("secret123").unwrap();
+        assert!(hash.starts_with("$argon2id$"));
+        assert!(verify_password("secret123", &hash));
+        assert!(!verify_password("secret124", &hash));
+        assert!(!verify_password("secret123", "not a phc string"));
+    }
 }
