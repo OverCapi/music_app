@@ -53,6 +53,21 @@ pub struct Downloads {
 }
 
 impl Downloads {
+    /// Moves `path` to the trash if it lives in the app's music folder.
+    /// Files added from elsewhere are left untouched. Returns whether it was trashed.
+    pub fn trash_if_owned(&self, path: &str) -> Result<bool, String> {
+        let (Ok(file), Ok(dir)) = (Path::new(path).canonicalize(), self.dir.canonicalize()) else {
+            // Missing file (or music folder): nothing to delete.
+            return Ok(false);
+        };
+        if !file.starts_with(&dir) {
+            return Ok(false);
+        }
+        trash::delete(&file)
+            .map(|()| true)
+            .map_err(|e| format!("Impossible de supprimer le fichier : {e}"))
+    }
+
     pub fn new(dir: PathBuf) -> Self {
         Self {
             dir,
@@ -80,16 +95,10 @@ impl Downloads {
             let (permits, active) = (Arc::clone(&self.permits), Arc::clone(&self.active));
             async move {
                 let _permit = permits.acquire_owned().await;
-                let mut result = Err(String::new());
-                for _ in 0..ATTEMPTS {
-                    result = download(&url, &dir, |status, progress| {
-                        emit(&app, &id, status, progress, None)
-                    })
-                    .await;
-                    if result.is_ok() {
-                        break;
-                    }
-                }
+                let result = download_with_retry(&url, &dir, |status, progress| {
+                    emit(&app, &id, status, progress, None)
+                })
+                .await;
                 let result =
                     result.and_then(|path| app.state::<Library>().add_downloaded(&path, &id));
                 match result {
@@ -115,8 +124,24 @@ impl Downloads {
     }
 }
 
+/// [`download`], retried once: YouTube sometimes answers 403 on the first try.
+pub(crate) async fn download_with_retry(
+    url: &str,
+    dir: &Path,
+    on_progress: impl Fn(DownloadStatus, Option<f64>),
+) -> Result<String, String> {
+    let mut result = Err(String::new());
+    for _ in 0..ATTEMPTS {
+        result = download(url, dir, &on_progress).await;
+        if result.is_ok() {
+            break;
+        }
+    }
+    result
+}
+
 /// Runs one yt-dlp download and returns the final file path.
-async fn download(
+pub(crate) async fn download(
     url: &str,
     dir: &Path,
     on_progress: impl Fn(DownloadStatus, Option<f64>),

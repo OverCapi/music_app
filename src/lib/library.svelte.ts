@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { playlists } from "$lib/playlists.svelte";
 
 export interface Track {
   path: string;
@@ -42,6 +43,8 @@ class Library {
     this.error = null;
     try {
       this.tracks = await invoke<Track[]>("remove_track", { path });
+      // The backend also drops the track from every playlist.
+      await playlists.refresh();
     } catch (e) {
       this.error = String(e);
     }

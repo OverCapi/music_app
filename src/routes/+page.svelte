@@ -6,17 +6,26 @@
   import PlayerBar from "$lib/components/PlayerBar.svelte";
   import QueueView from "$lib/components/QueueView.svelte";
   import SearchView from "$lib/components/SearchView.svelte";
-  import Sidebar, { type View } from "$lib/components/Sidebar.svelte";
+  import Sidebar from "$lib/components/Sidebar.svelte";
+  import PlaylistView from "$lib/components/PlaylistView.svelte";
+  import { nav } from "$lib/navigation.svelte";
+  import { playlists } from "$lib/playlists.svelte";
   import { search } from "$lib/search.svelte";
   import { downloads } from "$lib/downloads.svelte";
+  import { account } from "$lib/account.svelte";
+  import { group } from "$lib/group.svelte";
+  import GroupView from "$lib/components/GroupView.svelte";
 
   let queueOpen = $state(false);
-  let view = $state<View>("library");
 
   onMount(() => {
     library.refresh();
+    playlists.refresh();
     player.init();
-    const unlisteners = [search.listen(), downloads.listen()];
+    account.refresh();
+    const unlisteners = [search.listen(), downloads.listen(), group.listen()];
+    // After subscribing, so a state change in between is not missed.
+    unlisteners[2].then(() => group.refresh());
     return () => {
       player.stopPolling();
       unlisteners.forEach((p) => p.then((fn) => fn()));
@@ -25,11 +34,15 @@
 </script>
 
 <main class:queue-open={queueOpen}>
-  <Sidebar bind:view />
-  {#if view === "library"}
+  <Sidebar />
+  {#if nav.view.kind === "library"}
     <LibraryView />
-  {:else}
+  {:else if nav.view.kind === "search"}
     <SearchView />
+  {:else if nav.view.kind === "group"}
+    <GroupView />
+  {:else}
+    <PlaylistView id={nav.view.id} />
   {/if}
   {#if queueOpen}
     <QueueView onclose={() => (queueOpen = false)} />

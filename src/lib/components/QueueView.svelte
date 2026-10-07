@@ -2,6 +2,8 @@
   import { library } from "$lib/library.svelte";
   import { player } from "$lib/player.svelte";
   import { fileName, formatTime } from "$lib/utils";
+  import { group } from "$lib/group.svelte";
+  import { nav } from "$lib/navigation.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -25,59 +27,70 @@
     <button class="close" onclick={onclose} aria-label="Fermer" title="Fermer">✕</button>
   </header>
 
-  {#if current}
-    {@const t = info(current)}
-    <h3>En cours de lecture</h3>
-    <div class="item current" title={current}>
-      <span class="meta">
-        <span class="title">{t.title}</span>
-        <span class="artist">{t.artist}</span>
-      </span>
-      {#if t.duration !== undefined}
-        <span class="duration">{formatTime(t.duration)}</span>
+  {#if group.isActive || player.state.group_mode}
+    <div class="group-note">
+      <p>Tu es dans un groupe d'écoute : la lecture suit la file partagée du groupe.</p>
+      <button onclick={() => nav.go({ kind: "group" })}>Voir la file du groupe</button>
+    </div>
+  {:else}
+    {#if current}
+      {@const t = info(current)}
+      <h3>En cours de lecture</h3>
+      <div class="item current" title={current}>
+        <span class="meta">
+          <span class="title">{t.title}</span>
+          <span class="artist">{t.artist}</span>
+        </span>
+        {#if t.duration !== undefined}
+          <span class="duration">{formatTime(t.duration)}</span>
+        {/if}
+      </div>
+    {/if}
+
+    <div class="next-header">
+      <h3>Ensuite</h3>
+      {#if player.upcoming.length > 0}
+        <button class="clear" onclick={() => player.clearQueue()}>Vider</button>
       {/if}
     </div>
-  {/if}
 
-  <div class="next-header">
-    <h3>Ensuite</h3>
-    {#if player.upcoming.length > 0}
-      <button class="clear" onclick={() => player.clearQueue()}>Vider</button>
-    {/if}
-  </div>
-
-  {#if player.upcoming.length === 0}
-    <p class="empty">Rien à suivre. Ajoute des titres depuis la bibliothèque.</p>
-  {:else}
-    <div class="list">
-      {#each player.upcoming as { path, index } (index)}
-        {@const t = info(path)}
-        <div
-          class="item upcoming"
-          role="button"
-          title={path}
-          tabindex="0"
-          ondblclick={() => player.playIndex(index)}
-          onkeydown={(e) => e.key === "Enter" && player.playIndex(index)}
-        >
-          <span class="meta">
-            <span class="title">{t.title}</span>
-            <span class="artist">{t.artist}</span>
-          </span>
-          {#if t.duration !== undefined}
-            <span class="duration">{formatTime(t.duration)}</span>
-          {/if}
-          <button
-            class="remove"
-            onclick={() => player.removeFromQueue(index)}
-            aria-label="Retirer de la file"
-            title="Retirer de la file"
+    {#if player.upcoming.length === 0}
+      <p class="empty">
+        {library.tracks.length > 0
+          ? "File vide : un titre au hasard de la bibliothèque sera joué ensuite."
+          : "Rien à suivre. Ajoute des titres à ta bibliothèque."}
+      </p>
+    {:else}
+      <div class="list">
+        {#each player.upcoming as { path, index } (index)}
+          {@const t = info(path)}
+          <div
+            class="item upcoming"
+            role="button"
+            title={path}
+            tabindex="0"
+            ondblclick={() => player.playIndex(index)}
+            onkeydown={(e) => e.key === "Enter" && player.playIndex(index)}
           >
-            ✕
-          </button>
-        </div>
-      {/each}
-    </div>
+            <span class="meta">
+              <span class="title">{t.title}</span>
+              <span class="artist">{t.artist}</span>
+            </span>
+            {#if t.duration !== undefined}
+              <span class="duration">{formatTime(t.duration)}</span>
+            {/if}
+            <button
+              class="remove"
+              onclick={() => player.removeFromQueue(index)}
+              aria-label="Retirer de la file"
+              title="Retirer de la file"
+            >
+              ✕
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </aside>
 
@@ -187,6 +200,30 @@
 
   .item.upcoming:hover .remove {
     visibility: visible;
+  }
+
+  .group-note {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border-radius: 6px;
+    background: var(--surface-2);
+    font-size: 0.85rem;
+  }
+
+  .group-note p {
+    margin: 0 0 0.5rem;
+    color: var(--muted);
+  }
+
+  .group-note button {
+    padding: 0;
+    background: transparent;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .group-note button:hover {
+    text-decoration: underline;
   }
 
   .empty {

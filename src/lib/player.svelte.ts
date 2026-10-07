@@ -11,11 +11,16 @@ export interface PlayerState {
   current: number | null;
   /** Last playback error reported by the audio engine. */
   error: string | null;
+  /** Bumped on every queue change (the engine appends random tracks on its own). */
+  queue_version: number;
+  /** In a listening group: the engine plays the group track (a temp file) and local queue commands are refused. */
+  group_mode: boolean;
 }
 
 interface QueueState {
   tracks: string[];
   current: number | null;
+  version: number;
 }
 
 const POLL_MS = 250;
@@ -30,12 +35,15 @@ class Player {
     volume: 1,
     current: null,
     error: null,
+    queue_version: 0,
+    group_mode: false,
   });
   /** Paths in play order. The current index comes from `state.current` (kept fresh by polling). */
   queue = $state<string[]>([]);
   error = $state<string | null>(null);
 
   #timer: ReturnType<typeof setInterval> | null = null;
+  #queueVersion = -1;
 
   /** Tracks after the current one, with their queue index. */
   upcoming = $derived(
@@ -119,6 +127,9 @@ class Player {
   async refresh() {
     try {
       this.state = await invoke<PlayerState>("get_state");
+      if (this.state.queue_version !== this.#queueVersion) {
+        this.#setQueue(await invoke<QueueState>("get_queue"));
+      }
     } catch (e) {
       this.error = String(e);
     }
@@ -127,6 +138,7 @@ class Player {
   #setQueue(queue: QueueState) {
     this.queue = queue.tracks;
     this.state.current = queue.current;
+    this.#queueVersion = queue.version;
   }
 
   async #run(action: () => Promise<unknown>) {

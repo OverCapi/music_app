@@ -1,12 +1,13 @@
 //! Music library: every track the user has added, persisted as JSON in the app data dir.
 
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use lofty::prelude::*;
 use serde::{Deserialize, Serialize};
+
+use crate::storage::{load_json, save_json};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Track {
@@ -25,25 +26,34 @@ pub struct Track {
 
 pub struct Library {
     file: PathBuf,
-    tracks: Mutex<Vec<Track>>,
+    tracks: Arc<Mutex<Vec<Track>>>,
 }
 
 impl Library {
     /// Loads the library from `file`, starting empty if it is missing or unreadable.
     pub fn load(file: PathBuf) -> Self {
-        let tracks = fs::read_to_string(&file)
-            .ok()
-            .and_then(|json| match serde_json::from_str(&json) {
-                Ok(tracks) => Some(tracks),
-                Err(e) => {
-                    eprintln!("library: ignoring corrupt {}: {e}", file.display());
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let tracks = load_json(&file);
         Self {
             file,
-            tracks: Mutex::new(tracks),
+            tracks: Arc::new(Mutex::new(tracks)),
+        }
+    }
+
+    /// A picker that returns a random track path, avoiding `exclude` unless it's the only one.
+    pub fn random_picker(&self) -> impl Fn(Option<&str>) -> Option<String> + Send + Sync + 'static {
+        let tracks = Arc::clone(&self.tracks);
+        move |exclude| {
+            let tracks = tracks.lock().unwrap();
+            let candidates: Vec<&Track> = tracks
+                .iter()
+                .filter(|t| Some(t.path.as_str()) != exclude)
+                .collect();
+            let pool = if candidates.is_empty() {
+                tracks.iter().collect()
+            } else {
+                candidates
+            };
+            fastrand::choice(pool).map(|t| t.path.clone())
         }
     }
 
@@ -93,6 +103,18 @@ impl Library {
             .any(|t| t.youtube_id.as_deref() == Some(youtube_id))
     }
 
+    /// Path of the library copy of this video, if it is still on disk
+    /// (listening groups play it instead of downloading it again).
+    pub fn youtube_path(&self, youtube_id: &str) -> Option<String> {
+        self.tracks
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|t| t.youtube_id.as_deref() == Some(youtube_id))
+            .map(|t| t.path.clone())
+            .filter(|path| Path::new(path).is_file())
+    }
+
     pub fn remove(&self, path: &str) -> Result<Vec<Track>, String> {
         let mut tracks = self.tracks.lock().unwrap();
         tracks.retain(|t| t.path != path);
@@ -100,16 +122,8 @@ impl Library {
         Ok(tracks.clone())
     }
 
-    /// Writes to a temp file then renames, so a crash never leaves a half-written library.
     fn save(&self, tracks: &[Track]) -> Result<(), String> {
-        let err = |e: std::io::Error| format!("Impossible d'enregistrer la bibliothèque : {e}");
-        if let Some(dir) = self.file.parent() {
-            fs::create_dir_all(dir).map_err(err)?;
-        }
-        let json = serde_json::to_string_pretty(tracks).map_err(|e| e.to_string())?;
-        let tmp = self.file.with_extension("json.tmp");
-        fs::write(&tmp, json).map_err(err)?;
-        fs::rename(&tmp, &self.file).map_err(err)
+        save_json(&self.file, tracks)
     }
 }
 

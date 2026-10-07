@@ -2,6 +2,8 @@
   import { search, type SearchSource } from "$lib/search.svelte";
   import { formatTime, formatViews } from "$lib/utils";
   import DownloadButton from "$lib/components/DownloadButton.svelte";
+  import AddToGroup from "$lib/components/AddToGroup.svelte";
+  import { group } from "$lib/group.svelte";
 
   const sources: { id: SearchSource; label: string }[] = [
     { id: "music", label: "YouTube Music" },
@@ -63,7 +65,7 @@
   {/if}
 
   {#if search.results.length > 0}
-    <div class="results" class:stale={search.loading}>
+    <div class="results" class:stale={search.loading} class:in-group={group.isActive}>
       <div class="row head">
         <span>#</span>
         <span>Titre</span>
@@ -102,6 +104,16 @@
             {/if}
           </span>
           <span class="action">
+            {#if group.isActive}
+              <AddToGroup
+                entry={{
+                  youtubeId: result.id,
+                  title: result.title,
+                  artist: result.artist,
+                  duration: result.duration,
+                }}
+              />
+            {/if}
             <DownloadButton id={result.id} url={result.url} />
           </span>
         </div>
@@ -305,9 +317,38 @@
     font-size: 0.8rem;
   }
 
+  .in-group .row {
+    grid-template-columns: 2.5rem minmax(0, 3fr) minmax(0, 2fr) 4rem 4.5rem;
+  }
+
   .action {
     display: flex;
+    align-items: center;
     justify-content: center;
+    gap: 0.5rem;
+  }
+
+  /* Same look as DownloadButton. */
+  .action :global(.add-group) {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .action :global(.add-group:hover) {
+    color: var(--text);
+    transform: scale(1.08);
+  }
+
+  .action :global(.add-group svg) {
+    width: 22px;
+    height: 22px;
+    fill: currentColor;
   }
 
   .duration {

@@ -2,6 +2,7 @@
   import { player } from "$lib/player.svelte";
   import { library } from "$lib/library.svelte";
   import { fileName, formatTime } from "$lib/utils";
+  import { group } from "$lib/group.svelte";
 
   let { queueOpen = $bindable(false) }: { queueOpen?: boolean } = $props();
 
@@ -11,8 +12,41 @@
 
   const s = $derived(player.state);
   const track = $derived(library.find(s.path));
-  const position = $derived(scrubbing ? scrubValue : s.position);
-  const progress = $derived(s.duration > 0 ? (position / s.duration) * 100 : 0);
+
+  // In a listening group the controls drive the shared playback, not the local queue.
+  const groupMode = $derived(group.isActive || s.group_mode);
+  const entry = $derived(group.currentEntry);
+  const groupStatus = $derived(group.playback.status);
+  // The engine knows the real position once the group track is loaded locally;
+  // before that, estimate it from the shared state (re-evaluated on every poll of `s`).
+  const groupLoaded = $derived(s.group_mode && s.loaded && s.duration > 0);
+  const duration = $derived(groupMode && !groupLoaded ? (entry?.duration ?? 0) : s.duration);
+  const livePosition = $derived.by(() => {
+    const polled = s; // read first: re-estimates on every poll
+    return groupMode && !groupLoaded ? group.positionAt(Date.now()) : polled.position;
+  });
+  const playing = $derived(
+    groupMode ? groupStatus === "playing" || groupStatus === "preparing" : s.playing,
+  );
+  const canSeek = $derived(
+    groupMode
+      ? entry !== undefined && duration > 0 && (groupStatus === "playing" || groupStatus === "paused")
+      : s.loaded && s.duration > 0,
+  );
+  const position = $derived(scrubbing ? scrubValue : Math.min(livePosition, duration || livePosition));
+  const progress = $derived(duration > 0 ? (position / duration) * 100 : 0);
+
+  function togglePlay() {
+    return groupMode ? group.togglePlay() : player.togglePlay();
+  }
+
+  function next() {
+    return groupMode ? group.skip() : player.next();
+  }
+
+  function previous() {
+    return groupMode ? group.seek(0) : player.previous();
+  }
 
   function onScrubInput(e: Event) {
     scrubbing = true;
@@ -20,14 +54,24 @@
   }
 
   async function onScrubChange(e: Event) {
-    await player.seek(Number((e.currentTarget as HTMLInputElement).value));
+    const secs = Number((e.currentTarget as HTMLInputElement).value);
+    await (groupMode ? group.seek(secs) : player.seek(secs));
     scrubbing = false;
   }
 </script>
 
 <footer class="player-bar">
   <div class="now-playing">
-    {#if s.path}
+    {#if groupMode}
+      {#if entry}
+        <div class="cover" aria-hidden="true">♪</div>
+        <div class="meta">
+          <span class="title" title={entry.title}>{entry.title}</span>
+          <span class="artist">{entry.artist ?? "Artiste inconnu"}</span>
+        </div>
+      {/if}
+      <span class="badge" title="Lecture synchronisée avec le groupe d'écoute">Groupe</span>
+    {:else if s.path}
       <div class="cover" aria-hidden="true">♪</div>
       <div class="meta">
         <span class="title" title={s.path}>{track?.title ?? fileName(s.path)}</span>
@@ -38,32 +82,36 @@
 
   <div class="center">
     <div class="controls">
+      {#if !groupMode}
+        <button
+          class="icon"
+          onclick={() => player.stop()}
+          disabled={!s.loaded}
+          aria-label="Stop"
+          title="Stop"
+        >
+          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
+        </button>
+      {/if}
       <button
         class="icon"
-        onclick={() => player.stop()}
-        disabled={!s.loaded}
-        aria-label="Stop"
-        title="Stop"
-      >
-        <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
-      </button>
-      <button
-        class="icon"
-        onclick={() => player.previous()}
-        disabled={s.current === null}
-        aria-label="Précédent"
-        title="Précédent"
+        onclick={previous}
+        disabled={groupMode ? !canSeek : s.current === null}
+        aria-label={groupMode ? "Revenir au début" : "Précédent"}
+        title={groupMode ? "Revenir au début" : "Précédent"}
       >
         <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3.5 7L19 5v14z" /></svg>
       </button>
       <button
         class="icon play"
-        onclick={() => player.togglePlay()}
-        disabled={player.queue.length === 0}
-        aria-label={s.playing ? "Pause" : "Lecture"}
-        title={s.playing ? "Pause" : "Lecture"}
+        onclick={togglePlay}
+        disabled={groupMode
+          ? (group.state?.queue.length ?? 0) === 0
+          : player.queue.length === 0 && library.tracks.length === 0}
+        aria-label={playing ? "Pause" : "Lecture"}
+        title={playing ? "Pause" : "Lecture"}
       >
-        {#if s.playing}
+        {#if playing}
           <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
         {:else}
           <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
@@ -71,8 +119,10 @@
       </button>
       <button
         class="icon"
-        onclick={() => player.next()}
-        disabled={player.upcoming.length === 0}
+        onclick={next}
+        disabled={groupMode
+          ? entry === undefined
+          : player.upcoming.length === 0 && library.tracks.length === 0}
         aria-label="Suivant"
         title="Suivant"
       >
@@ -85,16 +135,16 @@
       <input
         type="range"
         min="0"
-        max={s.duration || 0}
+        max={duration || 0}
         step="0.1"
         value={position}
-        disabled={!s.loaded || s.duration === 0}
+        disabled={!canSeek}
         oninput={onScrubInput}
         onchange={onScrubChange}
         style:--fill="{progress}%"
         aria-label="Position"
       />
-      <span class="time">{formatTime(s.duration)}</span>
+      <span class="time">{formatTime(duration)}</span>
     </div>
   </div>
 
@@ -139,6 +189,18 @@
     align-items: center;
     gap: 0.75rem;
     min-width: 0;
+  }
+
+  .badge {
+    flex: none;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #000;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   .cover {

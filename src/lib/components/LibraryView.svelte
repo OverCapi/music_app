@@ -2,7 +2,11 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { library, type Track } from "$lib/library.svelte";
   import { player } from "$lib/player.svelte";
-  import { formatTime } from "$lib/utils";
+  import { playlists } from "$lib/playlists.svelte";
+  import TrackTable from "$lib/components/TrackTable.svelte";
+  import AddToPlaylist from "$lib/components/AddToPlaylist.svelte";
+  import AddToGroup from "$lib/components/AddToGroup.svelte";
+  import { group } from "$lib/group.svelte";
 
   let query = $state("");
 
@@ -14,7 +18,9 @@
     );
   });
 
-  const error = $derived(library.error ?? player.error ?? player.state.error);
+  const error = $derived(
+    library.error ?? playlists.error ?? player.error ?? player.state.error,
+  );
 
   async function addFiles() {
     const paths = await open({
@@ -31,6 +37,13 @@
       filtered.map((t) => t.path),
       index,
     );
+  }
+
+  // Only files in the app's music folder (downloads) are deleted; the backend checks.
+  function removeLabel(track: Track): string {
+    return track.youtube_id
+      ? "Supprimer (le fichier est mis à la corbeille)"
+      : "Retirer de la bibliothèque";
   }
 
   async function removeTrack(track: Track) {
@@ -71,67 +84,37 @@
       <p class="muted">Aucun résultat pour « {query} ».</p>
     </div>
   {:else}
-    <div class="table" role="table">
-      <div class="row head" role="row">
-        <span role="columnheader">#</span>
-        <span role="columnheader">Titre</span>
-        <span role="columnheader">Album</span>
-        <span role="columnheader" class="right">Durée</span>
-        <span></span>
-      </div>
-      {#each filtered as track, i (track.path)}
-        {@const current = player.state.path === track.path}
-        {@const playing = current && player.state.playing}
-        <div
-          class="row track"
-          class:current
-          role="row"
-          tabindex="0"
-          ondblclick={() => playFrom(i)}
-          onkeydown={(e) => e.key === "Enter" && playFrom(i)}
-          title={track.path}
+    <TrackTable tracks={filtered} onplay={playFrom} actionsWidth={group.isActive ? "7.5rem" : undefined}>
+      {#snippet actions(track)}
+        {#if group.isActive && track.youtube_id}
+          <AddToGroup
+            entry={{
+              youtubeId: track.youtube_id,
+              title: track.title,
+              artist: track.artist,
+              duration: track.duration,
+            }}
+          />
+        {/if}
+        <button
+          class="row-action"
+          onclick={() => player.enqueue([track.path])}
+          aria-label="Ajouter à la file d'attente"
+          title="Ajouter à la file d'attente"
         >
-          <span class="index">
-            <span class="num">{playing ? "▶" : i + 1}</span>
-            <button
-              class="row-play"
-              onclick={() => (current ? player.togglePlay() : playFrom(i))}
-              aria-label={playing ? "Pause" : "Lire"}
-            >
-              {#if playing}
-                <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
-              {:else}
-                <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-              {/if}
-            </button>
-          </span>
-          <span class="title-cell">
-            <span class="title">{track.title}</span>
-            <span class="artist">{track.artist ?? "Artiste inconnu"}</span>
-          </span>
-          <span class="album">{track.album ?? ""}</span>
-          <span class="duration right">{formatTime(track.duration)}</span>
-          <span class="row-actions">
-            <button
-              class="row-action"
-              onclick={() => player.enqueue([track.path])}
-              aria-label="Ajouter à la file d'attente"
-              title="Ajouter à la file d'attente"
-            >
-              <svg viewBox="0 0 24 24"><path d="M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm14-2v-3h2v3h3v2h-3v3h-2v-3h-3v-2z" /></svg>
-            </button>
-            <button
-              class="row-action"
-              onclick={() => removeTrack(track)}
-              aria-label="Retirer de la bibliothèque"
-              title="Retirer de la bibliothèque"
-            >
-              ✕
-            </button>
-          </span>
-        </div>
-      {/each}
-    </div>
+          <svg viewBox="0 0 24 24"><path d="M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm14-2v-3h2v3h3v2h-3v3h-2v-3h-3v-2z" /></svg>
+        </button>
+        <AddToPlaylist path={track.path} />
+        <button
+          class="row-action"
+          onclick={() => removeTrack(track)}
+          aria-label={removeLabel(track)}
+          title={removeLabel(track)}
+        >
+          ✕
+        </button>
+      {/snippet}
+    </TrackTable>
   {/if}
 </section>
 
@@ -213,124 +196,5 @@
 
   .muted {
     color: var(--muted);
-  }
-
-  .row {
-    display: grid;
-    grid-template-columns: 2.5rem minmax(0, 3fr) minmax(0, 2fr) 4rem 4rem;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.4rem 0.75rem;
-    border-radius: 4px;
-  }
-
-  .head {
-    margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--surface-2);
-    border-radius: 0;
-    color: var(--muted);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .track {
-    color: var(--muted);
-    font-size: 0.9rem;
-    cursor: default;
-    outline: none;
-  }
-
-  .track:hover,
-  .track:focus-visible {
-    background: var(--surface-2);
-  }
-
-  .right {
-    text-align: right;
-  }
-
-  .index {
-    display: grid;
-    place-items: center;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .index > * {
-    grid-area: 1 / 1;
-  }
-
-  .row-play,
-  .row-action {
-    display: grid;
-    place-items: center;
-    padding: 0;
-    background: transparent;
-    color: var(--text);
-    visibility: hidden;
-  }
-
-  .row-play svg,
-  .row-action svg {
-    width: 16px;
-    height: 16px;
-    fill: currentColor;
-  }
-
-  .track:hover .num {
-    visibility: hidden;
-  }
-
-  .track:hover .row-play,
-  .track:hover .row-action {
-    visibility: visible;
-  }
-
-  .row-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.6rem;
-  }
-
-  .row-action {
-    width: 20px;
-    height: 20px;
-    color: var(--muted);
-    font-size: 0.8rem;
-  }
-
-  .row-action:hover {
-    color: var(--text);
-  }
-
-  .title-cell {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .title,
-  .artist,
-  .album {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .title {
-    color: var(--text);
-  }
-
-  .artist {
-    font-size: 0.8rem;
-  }
-
-  .current .title,
-  .current .num {
-    color: var(--accent);
-  }
-
-  .duration {
-    font-variant-numeric: tabular-nums;
   }
 </style>

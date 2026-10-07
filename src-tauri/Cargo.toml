@@ -26,7 +26,13 @@ lofty = "0.25.4"
 tauri-plugin-dialog = "2.8.1"
 symphonia = { version = "0.5", default-features = false, features = ["ogg"] }
 symphonia-adapter-libopus = { version = "0.2.7", default-features = false }
-tokio = { version = "1", features = ["process", "io-util", "sync", "rt"] }
+tokio = { version = "1", features = ["process", "io-util", "sync", "rt", "time", "macros", "fs"] }
+fastrand = "2.5.0"
+trash = "5.2.9"
+group-protocol = { path = "../protocol" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
