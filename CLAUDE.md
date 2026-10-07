@@ -4,52 +4,62 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Desktop music player (Spotify-like clone) for **local files**: Tauri 2 + SvelteKit (Svelte 5 runes, SPA via adapter-static, `ssr = false`) with a Rust backend. It searches/downloads from YouTube via the external `yt-dlp` binary, and has synchronized "listening groups" through a separate Rust server. UI strings and user-facing errors are **French**; code and comments are English.
+Desktop music player (Spotify-like clone) for **local files**: Tauri 2 + SvelteKit 3 (Svelte 5 runes, SPA via adapter-static, `ssr = false`) with a Rust backend. It searches/downloads from YouTube via the external `yt-dlp` binary, and has synchronized "listening groups" through a separate Rust server. UI strings and user-facing errors are **French**; code and comments are English.
 
-Three independent Cargo projects (no workspace, each has its own `Cargo.lock`/`target/`):
+One Cargo workspace (root `Cargo.toml`, edition 2024, shared `[workspace.dependencies]` and `[workspace.lints]`, single `Cargo.lock`/`target/`):
 - `src-tauri/` — the app backend (crate `music_app`, lib `music_app_lib`)
-- `server/` — listening-group server (crate `music-group-server`)
-- `protocol/` — crate `group-protocol`, WebSocket/REST types shared by both (path dependency)
+- `crates/server/` — listening-group server (crate `music-group-server`)
+- `crates/protocol/` — crate `group-protocol`, WebSocket/REST types shared by both (feature `specta` derives TS types for the app)
 
 ## Commands
 
 ```sh
 pnpm install
 pnpm tauri dev                 # run the app (Vite on 127.0.0.1:1420, strictPort)
-pnpm check                     # svelte-check / TypeScript (expected: 0 errors, 0 warnings)
+pnpm check                     # svelte-check (expected: 0 errors, 0 warnings)
+pnpm lint                      # eslint + prettier --check (pnpm format to fix)
 pnpm build                     # frontend production build
 
-cd src-tauri && cargo clippy --all-targets && cargo test
-cd server    && cargo test     # unit tests (src/group.rs) + integration tests (tests/api.rs)
-cd server    && cargo test --test api <name>   # single integration test
-cd server    && cargo run      # env: MUSIC_SERVER_ADDR (127.0.0.1:8787), MUSIC_SERVER_DB (./server.db), MUSIC_SERVER_READY_TIMEOUT_MS (30000)
-cd protocol  && cargo test
+cargo fmt --all
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace         # also regenerates src/lib/bindings.ts
+cargo test -p music-group-server --test api <name>   # single server integration test
+cargo run -p music-group-server   # env: MUSIC_SERVER_ADDR (127.0.0.1:8787), MUSIC_SERVER_DB (./server.db), MUSIC_SERVER_READY_TIMEOUT_MS (30000)
 ```
 
-Second app instance for testing groups (uses the first instance's Vite dev server, needs a built debug binary):
-`MUSIC_APP_PROFILE=b src-tauri/target/debug/music_app` — the profile gets separate data/cache dirs (`<data>/profiles/b`).
+`tauri::generate_context!` needs the `build/` folder to exist (`mkdir -p build`) for cargo commands on a fresh checkout. CI (`.github/workflows/ci.yml`) runs all of the above.
 
-Runtime requirements: `yt-dlp` (looked up in PATH, then `~/Applications/yt-dlp/yt-dlp`), `ffmpeg`, system `libopus` (linked dynamically), `node` (passed to yt-dlp as JS runtime if present).
+Second app instance for testing groups (uses the first instance's Vite dev server, needs a built debug binary):
+`MUSIC_APP_PROFILE=b target/debug/music_app` — the profile gets separate data/cache dirs (`<data>/profiles/b`).
+
+Runtime requirements: `yt-dlp` (looked up in PATH, then `~/Applications/yt-dlp/yt-dlp`), `ffmpeg`, system `libopus` (linked dynamically; `build.rs` adds `/opt/homebrew/lib`), `node` (passed to yt-dlp as JS runtime if present).
 
 ## Architecture
 
 ### Backend (`src-tauri/src/`)
-`lib.rs` registers all Tauri commands and builds managed state in `setup` (order matters: `Library` is created before `AudioHandle`, which receives `library.random_picker()`).
+One module per feature: `mod.rs` holds the logic (testable without Tauri, unit tests use `Db::in_memory()` and `None` for the `AppHandle`), `commands.rs` holds thin `#[tauri::command] #[specta::specta]` wrappers. `lib.rs` builds managed state in `setup` and lists every command and event in `specta_builder()`.
 
-- **`audio.rs`** — playback engine. A dedicated thread owns the rodio 0.22 output (`MixerDeviceSink`/`Player`, not `Send`) and receives `AudioCommand`s over an mpsc channel; `AudioHandle` (managed state) shares `PlayerState` + the queue via `Arc<Mutex<Shared>>`. The **queue lives in the engine** so tracks advance without the UI; when it runs out the engine appends a random library track. `queue_version` is bumped on every queue change so the UI (which polls `get_state` every 250 ms) knows to refetch `get_queue`. **Group mode**: the group client drives playback with scheduled starts (`GroupStart`); local queue commands then return an error, and the engine loop wakes exactly at the scheduled instant (not on its 100 ms tick).
-- **`opus.rs`** — custom rodio `Source` for `.opus` (symphonia Ogg demuxer + libopus via `symphonia-adapter-libopus`), because rodio has no Opus codec and no codec registry hook. Decoder is chosen by file extension in `audio.rs::open_track`.
-- **`library.rs` / `playlists.rs`** — JSON persistence in the app data dir through `storage.rs` (`load_json` / atomic `save_json`). Tracks are identified by absolute path; downloaded tracks carry `youtube_id`. Playlists store paths; removing a library track also removes it from playlists and (only if inside the app music folder) moves the file to the trash.
-- **`youtube.rs`** — search via yt-dlp subprocesses (never through a shell). YouTube Music flat search only returns id+title, so results are returned immediately and enriched in the background (bounded parallel yt-dlp calls) via `search-details` events; a `search_id` discards stale results.
-- **`downloads.rs`** — `yt-dlp -x --audio-format opus --embed-metadata --embed-thumbnail` into `~/Music/Music App`, progress parsed from a custom `--progress-template` on stdout, emitted as `download-progress`; `library-changed` when a file is added. `download()` / `download_with_retry()` are reused by the group client.
-- **`account.rs` / `group.rs`** — listening-group client: REST login (reqwest, rustls), one WebSocket task (tokio-tungstenite) with reconnect + automatic re-Join and re-sending `Ready`, NTP-style clock offset (median of Ping/Pong samples), downloads of current + next 2 tracks into `<cache>/groups/<CODE>/` (deleted on leave/quit, wiped at startup). Engine commands are only re-issued when the derived playback target changes. Emits `group-state` (`GroupView | null`) and `group-error`.
+**Adding a feature**: new module (`mod.rs` + `commands.rs`), manage its state in `setup`, add its commands/events to `specta_builder()`, a new numbered SQL file in `db/migrations/` (appended to `MIGRATIONS`, never edit a shipped one) if it stores data, then a store in `src/lib/stores/` + components. Run `cargo test -p music_app` to regenerate `src/lib/bindings.ts` (committed, never edited by hand).
 
-### Listening-group protocol (`protocol/src/lib.rs`)
-Read its module doc before touching group code. The server is the source of truth and broadcasts the full `GroupState` after every change; clients send intents. Playback is `Idle | Preparing{deadline_ms} | Playing{position, at_ms} | Paused{position}` in **server time**; `Playing` means "at server time `at_ms` the track is at `position`". The server only relays **validated YouTube ids**; clients rebuild download URLs themselves from the id (never use a URL from another member).
+- **Contract**: tauri-specta generates `src/lib/bindings.ts` (`commands.*`, `events.*`, types). Errors are `AppError` (`error.rs`), serialized `{kind, message}` and **thrown** in TS. Rust `f64` exports as `number | null`; ids/timestamps (`i64`/`u64`) are cast to `number`.
+- **State flows by events, never polling**: getters (`get_*`) for the initial load, mutations return `()` (or the created item), and the backend pushes the new state: `PlayerChanged`, `QueueChanged`, `LibraryChanged`, `PlaylistsChanged`, `DownloadProgress`, `SearchDetails`, `GroupChanged`, `GroupError`.
+- **`db/`** — SQLite (rusqlite, one connection behind a mutex, WAL, foreign keys). Tables `tracks`, `playlists`, `playlist_tracks` (ON DELETE CASCADE: removing a track cleans playlists), `settings` (key/value: `server_url`, `username`, `token`, `legacy_imported`). `import_legacy.rs` imports the old `library.json`/`playlists.json`/`account.json` once.
+- **`audio/`** — playback engine. A dedicated thread (`engine.rs`) owns the rodio 0.22 output (`MixerDeviceSink`/`Player`, not `Send`) and receives `AudioCommand`s over an mpsc channel; `AudioHandle` (managed state, `mod.rs`) shares `PlayerState` + the queue via `Arc<Mutex<Shared>>`. `queue.rs` is a pure `Queue` (unit-tested). The queue lives in the engine so tracks advance without the UI; when it runs out the engine appends a random library track (`Library::random_picker`). Only the engine thread emits player/queue events. **Group mode**: the group client drives playback with scheduled starts (`GroupStart`); local queue commands return `AppError::GroupMode`, and the engine loop wakes exactly at the scheduled instant. `opus.rs` is a custom rodio `Source` for `.opus` (symphonia Ogg demuxer + libopus) — rodio has no Opus codec.
+- **`library/` / `playlists/`** — tracks have an integer `id` (`TrackId`); downloaded tracks carry `youtube_id`. Removing a library track moves the file to the trash only if it is inside the app music folder.
+- **`ytdlp.rs`** — the only place that runs yt-dlp (never through a shell, `kill_on_drop`). URLs are built only from validated ids (`video_url`).
+- **`search/`** — YouTube Music flat search only returns id+title, so results are returned immediately and enriched in the background (bounded parallel yt-dlp calls) via `SearchDetails`; a `search_id` discards stale results; `next_offset` drives pagination.
+- **`downloads/`** — `yt-dlp -x --audio-format opus --embed-metadata --embed-thumbnail` into `~/Music/Music App`, progress parsed from a custom `--progress-template`. `download()` is reused by the group client.
+- **`account/` / `group/`** — listening-group client: REST login (reqwest, rustls), token never exposed to the frontend. `group/` is split into `clock.rs` (NTP-style median offset, pure), `reconcile.rs` (server state → prefetch/Ready/engine target, pure), `connection.rs` (WebSocket task, reconnect + re-Join + re-sent `Ready`), `files.rs` (`<cache>/groups/<CODE>/`, wiped at startup, deleted on leave/quit). Engine commands are only re-issued when the derived target changes.
 
-### Server (`server/src/`)
-axum + WebSocket. `group.rs` is a pure state machine (time injected → unit-testable), `hub.rs` handles connections, broadcasts and deadline timers (generation counter so stale timers are no-ops), `db.rs` is SQLite (rusqlite) with argon2 passwords and sha256-hashed tokens. Groups are in memory and deleted when empty; membership does not survive a reconnect.
+### Listening-group protocol (`crates/protocol/src/lib.rs`)
+Read its module doc before touching group code. The server is the source of truth and broadcasts the full `GroupState` after every change; clients send intents. Playback is `Idle | Preparing{deadline_ms} | Playing{position, at_ms} | Paused{position}` in **server time**; `Playing` means "at server time `at_ms` the track is at `position`". The server only relays **validated YouTube ids** and positions ≤ `MAX_POSITION_SECS`; clients rebuild download URLs themselves from the id (never use a URL from another member).
+
+### Server (`crates/server/src/`)
+axum + WebSocket. `group.rs` is a pure state machine (time injected → unit-testable), `hub.rs` handles connections, broadcasts and deadline timers (generation counter so stale timers are no-ops), `db.rs` is SQLite (rusqlite + rusqlite_migration, `src/migrations/`) with argon2 passwords and sha256-hashed tokens. Groups are in memory and deleted when empty; membership does not survive a reconnect. Integration tests (`tests/api.rs`) use `Client::sync()` (Ping/Pong) to make sure the server handled earlier frames before another client acts.
 
 ### Frontend (`src/`)
-Single route `src/routes/+page.svelte` (layout: `Sidebar | view | optional QueueView`, `PlayerBar` at the bottom; global CSS variables defined there). State lives in class-based singleton stores in `src/lib/*.svelte.ts` (`player`, `library`, `playlists`, `search`, `downloads`, `account`, `group`, `nav`) that wrap `invoke` calls and Tauri event listeners (subscribed in `+page.svelte` `onMount`). Views are switched with `nav.view` (no SvelteKit routing). `TrackTable.svelte` is the shared track list; row buttons are passed through its `actions` snippet and use the `row-action` class (styled by `TrackTable` via `:global`).
+SvelteKit 3: config lives in `vite.config.js` (`sveltekit({ adapter })`, there is no `svelte.config.js`); import `src/lib` as `#lib/...` **with the file extension** (`package.json` `imports`). Routes: `routes/+layout.svelte` (layout `Sidebar | page | optional QueueView`, `PlayerBar` at the bottom; initializes every store in `onMount`), `+page.svelte` (library), `search/`, `playlist/[id]/`, `group/`. Global CSS variables and shared classes in `src/app.css`.
+
+State lives in class-based singleton stores in `src/lib/stores/*.svelte.ts` (`player`, `library`, `playlists`, `search`, `downloads`, `account`, `group`, `toasts`): `init()` subscribes to events then loads the initial state. Errors go through `attempt()` (`toasts.svelte.ts`), which shows the `AppError` message as a toast. `player` interpolates the position between `PlayerChanged` events. Reusable primitives in `src/lib/components/ui/` (`Icon`, `Slider`, `ProgressRing`, `TrackTable` with an `actions` snippet, `Toasts`); feature components in `src/lib/components/<feature>/`.
 
 `vite.config.js` contains a dev-only plugin (`compileSvelteBeforeCss`) that compiles a component before serving its virtual CSS module; without it, a CSS request arriving before the component's JS caches the raw `.svelte` file as CSS.

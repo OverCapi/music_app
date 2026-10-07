@@ -2,13 +2,13 @@
 
 Lecteur de musique de bureau inspiré de Spotify, centré sur les **fichiers locaux**. Les morceaux sont toujours lus depuis la machine de l'utilisateur, y compris dans les groupes d'écoute.
 
-Tauri 2 + SvelteKit (Svelte 5) pour l'interface, Rust pour le backend (lecture audio, bibliothèque, téléchargements), et un petit serveur Rust pour les groupes d'écoute.
+Tauri 2 + SvelteKit 3 (Svelte 5) pour l'interface, Rust pour le backend (lecture audio, bibliothèque, téléchargements), et un petit serveur Rust pour les groupes d'écoute.
 
 ## Fonctionnalités
 
 - **Lecture** de fichiers `.mp3` et `.opus` : lecture/pause, stop, barre de progression, volume.
 - **File d'attente** : suivant / précédent, enchaînement automatique, ajout de titres. Quand la file est vide, un titre au hasard de la bibliothèque est joué.
-- **Bibliothèque** persistante, avec titre, artiste, album et durée lus dans les tags, et une recherche.
+- **Bibliothèque** persistante (SQLite ; les anciens fichiers `library.json` / `playlists.json` / `account.json` sont importés automatiquement au premier lancement puis renommés en `.bak`), avec titre, artiste, album et durée lus dans les tags, et une recherche.
 - **Playlists** : création, renommage, suppression, ajout et retrait de titres, lecture.
 - **Recherche YouTube Music / YouTube** via yt-dlp, avec « Plus de résultats ».
 - **Téléchargement** en Opus, avec tags et pochette, dans `~/Music/Music App`. Le titre est ajouté automatiquement à la bibliothèque. Le supprimer de la bibliothèque met le fichier à la corbeille.
@@ -37,8 +37,7 @@ pnpm tauri dev      # ou ./run.sh
 Lancer le serveur :
 
 ```sh
-cd server
-cargo run           # écoute sur 127.0.0.1:8787
+cargo run -p music-group-server   # écoute sur 127.0.0.1:8787
 ```
 
 Variables d'environnement du serveur :
@@ -54,23 +53,24 @@ Dans l'app, ouvrir « Groupe d'écoute », se connecter (l'adresse du serveur es
 Pour tester à deux sur une même machine, lancer une seconde instance avec un profil séparé. Elle utilise le serveur Vite de la première instance, qui doit donc rester ouverte :
 
 ```sh
-MUSIC_APP_PROFILE=b src-tauri/target/debug/music_app
+MUSIC_APP_PROFILE=b target/debug/music_app
 ```
 
 ## Développement
 
 ```sh
-pnpm check                                   # vérification TypeScript / Svelte
-cd src-tauri && cargo clippy && cargo test   # backend de l'app
-cd server && cargo test                      # serveur (tests unitaires + intégration)
-cd protocol && cargo test                    # protocole partagé
+pnpm check && pnpm lint && pnpm build                      # interface
+cargo clippy --workspace --all-targets -- -D warnings      # tout le Rust
+cargo test --workspace                                     # tests (régénère src/lib/bindings.ts)
 ```
 
-Organisation du dépôt :
+Organisation du dépôt (un workspace Cargo) :
 
-- `src/` : interface SvelteKit (stores dans `src/lib/*.svelte.ts`, composants dans `src/lib/components/`)
-- `src-tauri/` : backend Rust de l'app
-- `server/` : serveur des groupes d'écoute
-- `protocol/` : messages partagés entre l'app et le serveur
+- `src/` : interface SvelteKit (routes dans `src/routes/`, stores dans `src/lib/stores/`, composants dans `src/lib/components/`, types et commandes générés dans `src/lib/bindings.ts`)
+- `src-tauri/` : backend Rust de l'app, un module par fonctionnalité
+- `crates/server/` : serveur des groupes d'écoute
+- `crates/protocol/` : messages partagés entre l'app et le serveur
+
+Voir [CLAUDE.md](CLAUDE.md) pour l'architecture détaillée et la marche à suivre pour ajouter une fonctionnalité.
 
 Les évolutions prévues sont listées dans [TODO.md](TODO.md).
