@@ -19,6 +19,8 @@ use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
 use symphonia_adapter_libopus::OpusDecoder;
 
+use crate::error::{AppError, AppResult};
+
 /// libopus always decodes at 48 kHz.
 const OPUS_SAMPLE_RATE: u32 = 48_000;
 
@@ -35,7 +37,7 @@ pub struct OpusSource {
 }
 
 impl OpusSource {
-    pub fn open(file: File) -> Result<Self, String> {
+    pub fn open(file: File) -> AppResult<Self> {
         let stream = MediaSourceStream::new(Box::new(file), Default::default());
         let mut hint = Hint::new();
         hint.with_extension("opus");
@@ -46,27 +48,27 @@ impl OpusSource {
                 &FormatOptions::default(),
                 &MetadataOptions::default(),
             )
-            .map_err(|e| format!("conteneur Ogg invalide ({e})"))?;
+            .map_err(|e| AppError::invalid(format!("conteneur Ogg invalide ({e})")))?;
         let format = probed.format;
 
         let track = format
             .tracks()
             .iter()
             .find(|t| t.codec_params.codec == CODEC_TYPE_OPUS)
-            .ok_or("aucune piste Opus dans le fichier")?;
+            .ok_or_else(|| AppError::invalid("aucune piste Opus dans le fichier"))?;
         let params = track.codec_params.clone();
         let track_id = track.id;
 
         let decoder = OpusDecoder::try_new(&params, &DecoderOptions::default())
-            .map_err(|e| format!("décodeur Opus indisponible ({e})"))?;
+            .map_err(|e| AppError::invalid(format!("décodeur Opus indisponible ({e})")))?;
 
         let channels = params
             .channels
             .and_then(|c| u16::try_from(c.count()).ok())
             .and_then(NonZero::new)
-            .ok_or("nombre de canaux inconnu")?;
+            .ok_or_else(|| AppError::invalid("nombre de canaux inconnu"))?;
         let sample_rate = NonZero::new(params.sample_rate.unwrap_or(OPUS_SAMPLE_RATE))
-            .ok_or("fréquence d'échantillonnage invalide")?;
+            .ok_or_else(|| AppError::invalid("fréquence d'échantillonnage invalide"))?;
         let total_duration = params.time_base.zip(params.n_frames).map(|(tb, frames)| {
             let t = tb.calc_time(frames);
             Duration::from_secs(t.seconds) + Duration::from_secs_f64(t.frac)
