@@ -1,0 +1,8 @@
+build
+.svelte-kit
+src-tauri
+crates
+target
+pnpm-lock.yaml
+src/lib/bindings.ts
+*.md

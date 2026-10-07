@@ -1,0 +1,28 @@
+[package]
+name = "music-group-server"
+version = "0.1.0"
+description = "Accounts and listening-group synchronization server for the music app"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+group-protocol.workspace = true
+argon2 = "0.5"
+axum = { version = "0.8", features = ["ws"] }
+getrandom = "0.3"
+hex = "0.4"
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+tokio = { workspace = true, features = ["full"] }
+tower-http = { version = "0.6", features = ["cors"] }
+
+[dev-dependencies]
+futures-util.workspace = true
+reqwest = { workspace = true }
+tokio-tungstenite.workspace = true
+
+[lints]
+workspace = true

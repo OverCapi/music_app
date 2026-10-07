@@ -1,16 +1,13 @@
 [package]
 name = "music_app"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Desktop music player for local files"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+# The `_lib` suffix keeps the lib name distinct from the bin name (cargo#8519 on Windows).
 name = "music_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -18,27 +15,29 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+group-protocol = { workspace = true, features = ["specta"] }
 tauri = { version = "2", features = [] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-rodio = { version = "0.22.2", default-features = false, features = ["playback", "symphonia-mp3"] }
-lofty = "0.25.4"
-tauri-plugin-dialog = "2.8.1"
+tauri-plugin-dialog = "2"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta.workspace = true
+specta-typescript = "0.0.12"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rusqlite.workspace = true
+rusqlite_migration.workspace = true
+rodio = { version = "0.22", default-features = false, features = ["playback", "symphonia-mp3"] }
+lofty = "0.25"
 symphonia = { version = "0.5", default-features = false, features = ["ogg"] }
-symphonia-adapter-libopus = { version = "0.2.7", default-features = false }
-tokio = { version = "1", features = ["process", "io-util", "sync", "rt", "time", "macros", "fs"] }
-fastrand = "2.5.0"
-trash = "5.2.9"
-group-protocol = { path = "../protocol" }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
-futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+symphonia-adapter-libopus = { version = "0.2", default-features = false }
+tokio = { workspace = true, features = ["process", "io-util", "sync", "rt", "time", "macros", "fs"] }
+fastrand = "2"
+trash = "5"
+reqwest.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
 
-
-# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
-[profile.release]
-codegen-units = 1
-lto = true
-opt-level = 3
-panic = "abort"
-strip = true
+[lints]
+workspace = true

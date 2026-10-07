@@ -1,5 +1,9 @@
 # TODO
 
+## Script d'installation
+
+Run le server et peut etre le client dans un docker
+
 ## Groupes d'écoute
 
 - [ ] Remplacer les codes de 6 caractères par des identifiants uniques (UID) pour rejoindre un groupe.

@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+import adapter from "@sveltejs/adapter-static";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
@@ -37,7 +38,11 @@ function compileSvelteBeforeCss() {
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [compileSvelteBeforeCss(), sveltekit()],
+  plugins: [
+    compileSvelteBeforeCss(),
+    // Tauri has no Node server: SPA mode, every route falls back to index.html.
+    sveltekit({ adapter: adapter({ fallback: "index.html" }) }),
+  ],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -57,7 +62,7 @@ export default defineConfig(() => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      ignored: ["**/src-tauri/**", "**/target/**", "**/crates/**"],
     },
   },
 }));
