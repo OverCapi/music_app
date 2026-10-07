@@ -1,13 +1,11 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { commands, events, type SearchResult, type SearchSource } from "#lib/bindings.ts";
+import { commands, events, type SearchResult } from "#lib/bindings.ts";
 import { attempt } from "#lib/stores/toasts.svelte.ts";
 
 class Search {
   query = $state("");
-  source = $state<SearchSource>("music");
-  /** Query and source of the displayed results. */
+  /** Query of the displayed results. */
   lastQuery = $state("");
-  lastSource = $state<SearchSource>("music");
   results = $state<SearchResult[]>([]);
   hasMore = $state(false);
   loading = $state(false);
@@ -21,11 +19,10 @@ class Search {
   async search() {
     const query = this.query.trim();
     if (!query) return;
-    const source = this.source;
     const request = ++this.#request;
     this.loading = true;
     this.loadingMore = false;
-    const res = await attempt(() => commands.searchYoutube(query, source, 0, null));
+    const res = await attempt(() => commands.searchYoutube(query, 0, null));
     if (request !== this.#request) return;
     this.loading = false;
     if (!res) {
@@ -38,7 +35,6 @@ class Search {
     this.results = dedupe(res.results);
     this.hasMore = res.has_more;
     this.lastQuery = query;
-    this.lastSource = source;
   }
 
   async loadMore() {
@@ -46,7 +42,7 @@ class Search {
     const request = this.#request;
     this.loadingMore = true;
     const res = await attempt(() =>
-      commands.searchYoutube(this.lastQuery, this.lastSource, this.#nextOffset, this.#searchId),
+      commands.searchYoutube(this.lastQuery, this.#nextOffset, this.#searchId),
     );
     if (request !== this.#request) return;
     this.loadingMore = false;
@@ -54,12 +50,6 @@ class Search {
     this.#nextOffset = res.next_offset;
     this.results = dedupe([...this.results, ...res.results]);
     this.hasMore = res.has_more;
-  }
-
-  setSource(source: SearchSource) {
-    if (source === this.source) return;
-    this.source = source;
-    if (this.query.trim()) this.search();
   }
 
   /** Background details of YouTube Music results. */

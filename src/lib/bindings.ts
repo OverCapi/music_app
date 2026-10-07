@@ -35,7 +35,7 @@ export const commands = {
 	deletePlaylist: (id: number) => __TAURI_INVOKE<null>("delete_playlist", { id }),
 	addToPlaylist: (id: number, trackIds: number[]) => __TAURI_INVOKE<null>("add_to_playlist", { id, trackIds }),
 	removeFromPlaylist: (id: number, trackId: number) => __TAURI_INVOKE<null>("remove_from_playlist", { id, trackId }),
-	searchYoutube: (query: string, source: SearchSource, offset: number, searchId: number | null) => __TAURI_INVOKE<SearchResponse>("search_youtube", { query, source, offset, searchId }),
+	searchYoutube: (query: string, offset: number, searchId: number | null) => __TAURI_INVOKE<SearchResponse>("search_youtube", { query, offset, searchId }),
 	downloadTrack: (youtubeId: string) => __TAURI_INVOKE<null>("download_track", { youtubeId }),
 	cancelDownload: (youtubeId: string) => __TAURI_INVOKE<void>("cancel_download", { youtubeId }),
 	getAccount: () => __TAURI_INVOKE<Account>("get_account"),
@@ -246,8 +246,6 @@ export type SearchResult = {
 	/**  True while artist/album/duration are still being fetched (YouTube Music). */
 	details_pending: boolean,
 };
-
-export type SearchSource = "music" | "youtube";
 
 export type Track = {
 	id: number,

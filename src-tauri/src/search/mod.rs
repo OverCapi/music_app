@@ -1,4 +1,6 @@
-//! YouTube / YouTube Music search through yt-dlp, page by page.
+//! Combined YouTube Music + YouTube search through yt-dlp, page by page. Both
+//! sources are queried in parallel; YouTube Music results come first and YouTube
+//! results already found on YouTube Music are dropped.
 //!
 //! - YouTube: a "flat" search already returns channel, duration and views.
 //! - YouTube Music: the flat search (~1.5 s) only returns ids and titles, so the
@@ -24,13 +26,6 @@ use crate::ytdlp;
 
 const PAGE_SIZE: u32 = 10;
 const MAX_PARALLEL_DETAILS: usize = 4;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "lowercase")]
-pub enum SearchSource {
-    Music,
-    Youtube,
-}
 
 #[derive(Clone, Debug, Serialize, specta::Type)]
 pub struct SearchResult {
@@ -98,7 +93,6 @@ impl Search {
         &self,
         app: AppHandle,
         query: &str,
-        source: SearchSource,
         offset: u32,
         search_id: Option<u64>,
     ) -> AppResult<SearchResponse> {
@@ -124,51 +118,67 @@ impl Search {
         };
 
         let end = offset + PAGE_SIZE;
-        let target = match source {
-            SearchSource::Music => {
-                let mut url =
-                    Url::parse_with_params("https://music.youtube.com/search", [("q", query)])
-                        .map_err(|e| AppError::Internal(e.to_string()))?;
-                // Only the "Songs" section of the results page.
-                url.set_fragment(Some("songs"));
-                url.to_string()
-            }
-            SearchSource::Youtube => format!("ytsearch{end}:{query}"),
+        let mut music_url =
+            Url::parse_with_params("https://music.youtube.com/search", [("q", query)])
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+        // Only the "Songs" section of the results page.
+        music_url.set_fragment(Some("songs"));
+        let youtube_target = format!("ytsearch{end}:{query}");
+        let (music, youtube) = tokio::join!(
+            flat_search(music_url.as_str(), offset, end),
+            flat_search(&youtube_target, offset, end),
+        );
+        // One source failing is not fatal as long as the other answers.
+        let (music, youtube) = match (music, youtube) {
+            (Err(e), Err(_)) => return Err(e),
+            (music, youtube) => (
+                music.map_err(|e| tracing::warn!("YouTube Music search: {e}")),
+                youtube.map_err(|e| tracing::warn!("YouTube search: {e}")),
+            ),
         };
-        let entries: Vec<FlatEntry> = ytdlp::run_json(&[
-            &target,
-            "--flat-playlist",
-            "--dump-json",
-            "--playlist-start",
-            &(offset + 1).to_string(),
-            "--playlist-end",
-            &end.to_string(),
-        ])
-        .await?;
-        let has_more = entries.len() as u32 == PAGE_SIZE;
-        let results: Vec<SearchResult> = entries
+        let (music, youtube) = (music.unwrap_or_default(), youtube.unwrap_or_default());
+        let has_more = music.len() as u32 == PAGE_SIZE || youtube.len() as u32 == PAGE_SIZE;
+        let music: Vec<SearchResult> = music
             .into_iter()
             .filter(|e| is_valid_youtube_id(&e.id))
-            .map(|e| to_result(e, source))
+            .map(|e| to_result(e, true))
+            .collect();
+        let youtube: Vec<SearchResult> = youtube
+            .into_iter()
+            .filter(|e| is_valid_youtube_id(&e.id) && !music.iter().any(|m| m.id == e.id))
+            .map(|e| to_result(e, false))
             .collect();
 
         // If a newer search started meanwhile, these results will be discarded.
-        if source == SearchSource::Music && self.latest.load(Ordering::SeqCst) == search_id {
-            let ids = results.iter().map(|r| r.id.clone()).collect();
+        if !music.is_empty() && self.latest.load(Ordering::SeqCst) == search_id {
+            let ids = music.iter().map(|r| r.id.clone()).collect();
             let task = tauri::async_runtime::spawn(fetch_details(app, search_id, ids));
             self.details_tasks.lock().unwrap().push(task);
         }
 
         Ok(SearchResponse {
             search_id,
-            results,
+            results: music.into_iter().chain(youtube).collect(),
             has_more,
             next_offset: end,
         })
     }
 }
 
-fn to_result(e: FlatEntry, source: SearchSource) -> SearchResult {
+async fn flat_search(target: &str, offset: u32, end: u32) -> AppResult<Vec<FlatEntry>> {
+    ytdlp::run_json(&[
+        target,
+        "--flat-playlist",
+        "--dump-json",
+        "--playlist-start",
+        &(offset + 1).to_string(),
+        "--playlist-end",
+        &end.to_string(),
+    ])
+    .await
+}
+
+fn to_result(e: FlatEntry, music: bool) -> SearchResult {
     SearchResult {
         thumbnail: format!("https://i.ytimg.com/vi/{}/mqdefault.jpg", e.id),
         title: e.title.unwrap_or_else(|| e.id.clone()),
@@ -176,7 +186,7 @@ fn to_result(e: FlatEntry, source: SearchSource) -> SearchResult {
         album: None,
         duration: e.duration,
         views: e.view_count,
-        details_pending: source == SearchSource::Music,
+        details_pending: music,
         id: e.id,
     }
 }

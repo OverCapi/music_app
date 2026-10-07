@@ -1,18 +1,10 @@
 <script lang="ts">
-  import type { SearchSource } from "#lib/bindings.ts";
   import { search } from "#lib/stores/search.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
   import { formatTime, formatViews } from "#lib/format.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
   import DownloadButton from "#lib/components/search/DownloadButton.svelte";
   import AddToGroup from "#lib/components/group/AddToGroup.svelte";
-
-  const sources: { id: SearchSource; label: string }[] = [
-    { id: "music", label: "YouTube Music" },
-    { id: "youtube", label: "YouTube" },
-  ];
-
-  const isMusic = $derived(search.lastSource === "music");
 
   function onsubmit(e: SubmitEvent) {
     e.preventDefault();
@@ -28,26 +20,11 @@
       <!-- svelte-ignore a11y_autofocus -->
       <input
         type="search"
-        placeholder={search.source === "music"
-          ? "Titre, artiste… sur YouTube Music"
-          : "Rechercher sur YouTube"}
+        placeholder="Titre, artiste… sur YouTube et YouTube Music"
         bind:value={search.query}
         autofocus
       />
     </form>
-    <div class="sources" role="radiogroup" aria-label="Source">
-      {#each sources as s (s.id)}
-        <button
-          class="chip"
-          class:active={search.source === s.id}
-          role="radio"
-          aria-checked={search.source === s.id}
-          onclick={() => search.setSource(s.id)}
-        >
-          {s.label}
-        </button>
-      {/each}
-    </div>
   </header>
 
   {#if search.loading}
@@ -55,9 +32,7 @@
   {:else if search.lastQuery && search.results.length === 0}
     <p class="status">Aucun résultat pour « {search.lastQuery} ».</p>
   {:else if !search.lastQuery}
-    <p class="status">
-      Appuie sur Entrée pour chercher sur {search.source === "music" ? "YouTube Music" : "YouTube"}.
-    </p>
+    <p class="status">Appuie sur Entrée pour chercher sur YouTube et YouTube Music.</p>
   {/if}
 
   {#if search.results.length > 0}
@@ -65,7 +40,7 @@
       <div class="row head">
         <span>#</span>
         <span>Titre</span>
-        <span>{isMusic ? "Album" : "Vues"}</span>
+        <span>Album / Vues</span>
         <span class="right">Durée</span>
         <span></span>
       </div>
@@ -79,15 +54,15 @@
               {#if result.details_pending}
                 <span class="placeholder"></span>
               {:else}
-                <span class="artist">{result.artist ?? (isMusic ? "Artiste inconnu" : "")}</span>
+                <span class="artist">{result.artist ?? ""}</span>
               {/if}
             </span>
           </span>
           <span class="album">
             {#if result.details_pending}
               <span class="placeholder"></span>
-            {:else if isMusic}
-              {result.album ?? ""}
+            {:else if result.album}
+              {result.album}
             {:else if result.views !== null}
               {formatViews(result.views)}
             {/if}
@@ -161,28 +136,6 @@
     font: inherit;
     font-size: 0.9rem;
     outline: none;
-  }
-
-  .sources {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .chip {
-    padding: 0.4rem 0.9rem;
-    border-radius: 999px;
-    background: var(--surface-2);
-    color: var(--text);
-    font-size: 0.85rem;
-  }
-
-  .chip:hover {
-    background: var(--surface-3);
-  }
-
-  .chip.active {
-    background: var(--text);
-    color: #000;
   }
 
   .more {
