@@ -17,12 +17,13 @@ use tokio::process::Command;
 
 use crate::error::{AppError, AppResult};
 
-/// `https://www.youtube.com/watch?v=<id>`, only for a valid id.
+/// `https://music.youtube.com/watch?v=<id>`, only for a valid id. The YouTube Music
+/// URL works for any video and gives yt-dlp the artist/album metadata when it exists.
 pub fn video_url(youtube_id: &str) -> AppResult<String> {
     if !is_valid_youtube_id(youtube_id) {
         return Err(AppError::invalid("Identifiant YouTube invalide"));
     }
-    Ok(format!("https://www.youtube.com/watch?v={youtube_id}"))
+    Ok(format!("https://music.youtube.com/watch?v={youtube_id}"))
 }
 
 /// Runs yt-dlp and parses every stdout line that is a JSON `T` (others are skipped).
@@ -186,7 +187,7 @@ mod tests {
     fn urls_only_from_valid_ids() {
         assert_eq!(
             video_url("d7woYjGWs6k").unwrap(),
-            "https://www.youtube.com/watch?v=d7woYjGWs6k"
+            "https://music.youtube.com/watch?v=d7woYjGWs6k"
         );
         assert!(video_url("d7woYjGWs6k&list=x").is_err());
         assert!(video_url("https://evil.example").is_err());
