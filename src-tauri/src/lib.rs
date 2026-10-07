@@ -143,6 +143,26 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
+        // `cover://localhost/<track id>`: embedded cover art of a library track.
+        .register_asynchronous_uri_scheme_protocol("cover", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let id = request.uri().path().trim_start_matches('/').parse::<i64>();
+            tauri::async_runtime::spawn_blocking(move || {
+                let cover = id
+                    .ok()
+                    .and_then(|id| app.state::<Library>().cover(id).ok().flatten());
+                let response = match cover {
+                    Some((bytes, mime)) => tauri::http::Response::builder()
+                        .header("Content-Type", mime)
+                        .header("Cache-Control", "max-age=3600")
+                        .body(bytes),
+                    None => tauri::http::Response::builder()
+                        .status(404)
+                        .body(Vec::new()),
+                };
+                responder.respond(response.expect("static response parts are valid"));
+            });
+        })
         .setup(move |app| {
             builder.mount_events(app);
             let handle = app.handle().clone();

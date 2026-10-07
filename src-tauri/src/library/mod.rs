@@ -81,6 +81,22 @@ impl Library {
             .ok_or_else(|| AppError::not_found(GONE))
     }
 
+    /// Embedded cover art (bytes, MIME type), if the file has one.
+    pub fn cover(&self, id: TrackId) -> AppResult<Option<(Vec<u8>, String)>> {
+        let path = self.get(id)?.path;
+        let tagged = lofty::read_from_path(path).map_err(|e| AppError::Internal(e.to_string()))?;
+        let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
+        let pictures = tag.map(|t| t.pictures()).unwrap_or_default();
+        let picture = pictures
+            .iter()
+            .find(|p| p.pic_type() == lofty::picture::PictureType::CoverFront)
+            .or_else(|| pictures.first());
+        Ok(picture.map(|p| {
+            let mime = p.mime_type().map_or("image/jpeg", |m| m.as_str());
+            (p.data().to_vec(), mime.to_owned())
+        }))
+    }
+
     /// Resolves ids to queue items, in order (error if one is unknown).
     pub fn queue_items(&self, ids: &[TrackId]) -> AppResult<Vec<QueueItem>> {
         let conn = self.db.conn();

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { convertFileSrc } from "@tauri-apps/api/core";
   import type { Track } from "#lib/bindings.ts";
   import { player } from "#lib/stores/player.svelte.ts";
   import { formatTime } from "#lib/format.ts";
@@ -52,8 +53,16 @@
         </button>
       </span>
       <span class="title-cell">
-        <span class="title">{track.title}</span>
-        <span class="artist">{track.artist ?? "Artiste inconnu"}</span>
+        <img
+          src={convertFileSrc(String(track.id), "cover")}
+          alt=""
+          loading="lazy"
+          onerror={(e) => ((e.currentTarget as HTMLElement).style.visibility = "hidden")}
+        />
+        <span class="meta">
+          <span class="title">{track.title}</span>
+          <span class="artist">{track.artist ?? "Artiste inconnu"}</span>
+        </span>
       </span>
       <span class="album">{track.album ?? ""}</span>
       <span class="duration right">{formatTime(track.duration)}</span>
@@ -150,6 +159,22 @@
   }
 
   .title-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  img {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: var(--surface-2);
+  }
+
+  .meta {
     display: flex;
     flex-direction: column;
     min-width: 0;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { convertFileSrc } from "@tauri-apps/api/core";
   import { player } from "#lib/stores/player.svelte.ts";
   import { library } from "#lib/stores/library.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
@@ -49,6 +50,14 @@
     scrubbing ? scrubValue : Math.min(livePosition, duration || livePosition),
   );
 
+  const coverSrc = $derived(
+    groupMode
+      ? entry && `https://i.ytimg.com/vi/${entry.youtube_id}/mqdefault.jpg`
+      : s.track_id !== null
+        ? convertFileSrc(String(s.track_id), "cover")
+        : undefined,
+  );
+
   function togglePlay() {
     return groupMode ? group.togglePlay() : player.togglePlay();
   }
@@ -76,7 +85,18 @@
   <div class="now-playing">
     {#if groupMode}
       {#if entry}
-        <div class="cover" aria-hidden="true">♪</div>
+        <div class="cover" aria-hidden="true">
+          {#key coverSrc}
+            {#if coverSrc}
+              <img
+                src={coverSrc}
+                alt=""
+                onerror={(e) => ((e.currentTarget as HTMLElement).style.display = "none")}
+              />
+            {/if}
+          {/key}
+          ♪
+        </div>
         <div class="meta">
           <span class="title" title={entry.title}>{entry.title}</span>
           <span class="artist">{entry.artist ?? "Artiste inconnu"}</span>
@@ -84,7 +104,18 @@
       {/if}
       <span class="badge" title="Lecture synchronisée avec le groupe d'écoute">Groupe</span>
     {:else if s.path}
-      <div class="cover" aria-hidden="true">♪</div>
+      <div class="cover" aria-hidden="true">
+        {#key coverSrc}
+          {#if coverSrc}
+            <img
+              src={coverSrc}
+              alt=""
+              onerror={(e) => ((e.currentTarget as HTMLElement).style.display = "none")}
+            />
+          {/if}
+        {/key}
+        ♪
+      </div>
       <div class="meta">
         <span class="title" title={s.path}>{track?.title ?? fileName(s.path)}</span>
         <span class="artist">{track?.artist ?? "Artiste inconnu"}</span>
@@ -218,6 +249,20 @@
     background: linear-gradient(135deg, #2a2a2a, #3e3e3e);
     color: var(--muted);
     font-size: 1.4rem;
+  }
+
+  .cover {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cover img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: var(--surface-2);
   }
 
   .meta {
