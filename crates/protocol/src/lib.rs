@@ -28,6 +28,9 @@ pub const START_LEAD_MS: u64 = 1500;
 pub const RESUME_LEAD_MS: u64 = 500;
 /// Maximum time the group waits for slow members before starting anyway.
 pub const READY_TIMEOUT_MS: u64 = 30_000;
+/// Upper bound of a playback position (seconds). Positions come from other members:
+/// anything larger is rejected so it can't overflow clients' time arithmetic.
+pub const MAX_POSITION_SECS: f64 = 24.0 * 3600.0;
 /// Length of a group invite code.
 pub const CODE_LEN: usize = 6;
 /// Invite links look like `musicapp://join/ABC123`.

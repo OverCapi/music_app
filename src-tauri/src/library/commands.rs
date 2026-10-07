@@ -21,9 +21,10 @@ pub async fn add_tracks(library: State<'_, Library>, paths: Vec<String>) -> AppR
 
 /// Removes a track from the library, the playlists and the queue. A file inside
 /// the app music folder is moved to the trash first (if that fails, nothing changes).
+/// Async: trashing a file can take a while, so it must not block the main thread.
 #[tauri::command]
 #[specta::specta]
-pub fn remove_track(
+pub async fn remove_track(
     library: State<'_, Library>,
     playlists: State<'_, Playlists>,
     downloads: State<'_, Downloads>,

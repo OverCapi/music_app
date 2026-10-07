@@ -63,7 +63,9 @@ class Group {
   }
 
   leave() {
-    return this.#busy(() => commands.groupLeave());
+    return this.#busy(async () => {
+      await commands.groupLeave();
+    });
   }
 
   /** Resolves to true on success. */

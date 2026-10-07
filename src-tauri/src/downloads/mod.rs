@@ -178,10 +178,11 @@ fn remove_partial_files(dir: &Path, youtube_id: &str) {
     for path in entries.flatten().map(|e| e.path()) {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
         let partial = name.ends_with(".part") || name.ends_with(".ytdl") || name.contains(".part-");
-        if name.contains(&marker) && partial {
-            if let Err(e) = std::fs::remove_file(&path) {
-                tracing::warn!("cannot remove {}: {e}", path.display());
-            }
+        if name.contains(&marker)
+            && partial
+            && let Err(e) = std::fs::remove_file(&path)
+        {
+            tracing::warn!("cannot remove {}: {e}", path.display());
         }
     }
 }

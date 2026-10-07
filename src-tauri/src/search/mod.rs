@@ -52,6 +52,9 @@ pub struct SearchResponse {
     pub search_id: u64,
     pub results: Vec<SearchResult>,
     pub has_more: bool,
+    /// `offset` for the next page (results with invalid ids are dropped, so it can't
+    /// be derived from the number of results).
+    pub next_offset: u32,
 }
 
 #[derive(Clone, Debug, Serialize, specta::Type, tauri_specta::Event)]
@@ -160,6 +163,7 @@ impl Search {
             search_id,
             results,
             has_more,
+            next_offset: end,
         })
     }
 }

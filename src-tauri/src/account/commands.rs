@@ -53,7 +53,7 @@ pub async fn login(
 
 #[tauri::command]
 #[specta::specta]
-pub fn logout(
+pub async fn logout(
     account: State<'_, AccountStore>,
     group: State<'_, GroupClient>,
 ) -> AppResult<Account> {

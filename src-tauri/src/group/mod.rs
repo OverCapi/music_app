@@ -131,6 +131,8 @@ struct Membership {
     joined: Option<oneshot::Sender<AppResult<()>>>,
     in_audio_group: bool,
     applied: Option<Target>,
+    /// Entry that was current at the last reconcile.
+    current_entry: Option<u64>,
     /// YouTube ids announced with `Ready` on the current connection.
     announced: HashSet<String>,
 }
@@ -210,6 +212,7 @@ impl GroupClient {
             joined: Some(joined_tx),
             in_audio_group: false,
             applied: None,
+            current_entry: None,
             announced: HashSet::new(),
         });
         let url = websocket_url(&session.server_url, &session.token);
@@ -300,10 +303,10 @@ impl Inner {
             // Drops yt-dlp, which kills it (kill_on_drop).
             task.abort();
         }
-        if m.in_audio_group {
-            if let Err(e) = self.audio().leave_group() {
-                tracing::warn!("group: leaving audio group mode failed: {e}");
-            }
+        if m.in_audio_group
+            && let Err(e) = self.audio().leave_group()
+        {
+            tracing::warn!("group: leaving audio group mode failed: {e}");
         }
         if let Some(code) = m.code.clone() {
             // Kept if we rejoined the same group meanwhile.
@@ -352,6 +355,9 @@ impl Inner {
         self.with(id, |m| {
             m.connected = true;
             m.announced.clear();
+            // Re-command the engine on the next state: a track may have ended while
+            // offline (its `Ended` was dropped), and the clock offset is re-measured.
+            m.applied = None;
             self.emit(m);
             match &m.code {
                 Some(code) => ClientMessage::Join { code: code.clone() },
@@ -452,6 +458,20 @@ impl Inner {
 
     /// Brings downloads, `Ready` and the audio engine in line with the state.
     fn reconcile(self: &Arc<Self>, m: &mut Membership) {
+        let Some(state) = &m.state else { return };
+        let current = reconcile::current_entry(state).map(|e| (e.entry_id, e.youtube_id.clone()));
+        if current.as_ref().map(|c| c.0) != m.current_entry {
+            m.current_entry = current.as_ref().map(|c| c.0);
+            // A failed download gets another try each time its track becomes current.
+            if let Some((_, youtube_id)) = &current
+                && m.downloads
+                    .get(youtube_id)
+                    .is_some_and(|d| d.status == TrackStatus::Error)
+                && is_valid_youtube_id(youtube_id)
+            {
+                m.downloads.remove(youtube_id);
+            }
+        }
         let Some(state) = &m.state else { return };
         for youtube_id in reconcile::prefetch(state) {
             self.ensure_download(m, &youtube_id);

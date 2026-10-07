@@ -14,6 +14,7 @@ class Search {
   loadingMore = $state(false);
 
   #searchId: number | null = null;
+  #nextOffset = 0;
   /** Incremented per new search, so a slow older request can't overwrite a newer one. */
   #request = 0;
 
@@ -33,6 +34,7 @@ class Search {
       return;
     }
     this.#searchId = res.search_id;
+    this.#nextOffset = res.next_offset;
     this.results = dedupe(res.results);
     this.hasMore = res.has_more;
     this.lastQuery = query;
@@ -44,11 +46,12 @@ class Search {
     const request = this.#request;
     this.loadingMore = true;
     const res = await attempt(() =>
-      commands.searchYoutube(this.lastQuery, this.lastSource, this.results.length, this.#searchId),
+      commands.searchYoutube(this.lastQuery, this.lastSource, this.#nextOffset, this.#searchId),
     );
     if (request !== this.#request) return;
     this.loadingMore = false;
     if (!res) return;
+    this.#nextOffset = res.next_offset;
     this.results = dedupe([...this.results, ...res.results]);
     this.hasMore = res.has_more;
   }

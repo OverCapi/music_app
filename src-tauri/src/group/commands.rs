@@ -39,10 +39,12 @@ pub async fn group_join(
     group.start(Intent::Join(code), session(&account)?).await
 }
 
+/// Async (like `logout`): leaving deletes the group's files.
 #[tauri::command]
 #[specta::specta]
-pub fn group_leave(group: State<'_, GroupClient>) {
+pub async fn group_leave(group: State<'_, GroupClient>) -> AppResult<()> {
     group.leave();
+    Ok(())
 }
 
 #[tauri::command]

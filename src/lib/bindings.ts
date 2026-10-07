@@ -26,6 +26,7 @@ export const commands = {
 	/**
 	 *  Removes a track from the library, the playlists and the queue. A file inside
 	 *  the app music folder is moved to the trash first (if that fails, nothing changes).
+	 *  Async: trashing a file can take a while, so it must not block the main thread.
 	 */
 	removeTrack: (id: number) => __TAURI_INVOKE<null>("remove_track", { id }),
 	getPlaylists: () => __TAURI_INVOKE<Playlist[]>("get_playlists"),
@@ -57,7 +58,8 @@ export const commands = {
 	groupCreate: () => __TAURI_INVOKE<GroupView>("group_create"),
 	/**  `invite`: a bare code or a `musicapp://join/…` link. */
 	groupJoin: (invite: string) => __TAURI_INVOKE<GroupView>("group_join", { invite }),
-	groupLeave: () => __TAURI_INVOKE<void>("group_leave"),
+	/**  Async (like `logout`): leaving deletes the group's files. */
+	groupLeave: () => __TAURI_INVOKE<null>("group_leave"),
 	groupAdd: (youtubeId: string, title: string, artist: string | null, duration: number | null) => __TAURI_INVOKE<null>("group_add", { youtubeId, title, artist, duration }),
 	groupRemove: (entryId: number) => __TAURI_INVOKE<null>("group_remove", { entryId }),
 	groupPlayEntry: (entryId: number) => __TAURI_INVOKE<null>("group_play_entry", { entryId }),
@@ -224,6 +226,11 @@ export type SearchResponse = {
 	search_id: number,
 	results: SearchResult[],
 	has_more: boolean,
+	/**
+	 *  `offset` for the next page (results with invalid ids are dropped, so it can't
+	 *  be derived from the number of results).
+	 */
+	next_offset: number,
 };
 
 export type SearchResult = {

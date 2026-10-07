@@ -7,8 +7,8 @@
 use std::collections::HashSet;
 
 use group_protocol::{
-    ClientMessage, GroupState, Member, Playback, QueueEntry, RESUME_LEAD_MS, START_LEAD_MS,
-    is_valid_youtube_id,
+    ClientMessage, GroupState, MAX_POSITION_SECS, Member, Playback, QueueEntry, RESUME_LEAD_MS,
+    START_LEAD_MS, is_valid_youtube_id,
 };
 
 /// Identifies a WebSocket connection (a member is a connection, not a user).
@@ -267,7 +267,7 @@ impl Group {
     }
 
     fn seek(&mut self, position: f64, now: u64) -> Result<bool, String> {
-        if !position.is_finite() || position < 0.0 {
+        if !(0.0..=MAX_POSITION_SECS).contains(&position) {
             return Err("Position invalide".into());
         }
         Ok(match self.playback {

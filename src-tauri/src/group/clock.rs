@@ -4,6 +4,9 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_SAMPLES: usize = 15;
+/// Bound (10 years) on the distance between `base` and a scheduled instant: beyond
+/// is a bogus server time, and it keeps the `Duration`/`Instant` math from overflowing.
+const MAX_SECS: f64 = 10.0 * 365.0 * 86_400.0;
 
 /// Local times are milliseconds since `base` (monotonic, so wall-clock jumps on
 /// this machine don't matter); `offset` = server ms − local ms.
@@ -52,14 +55,14 @@ impl Clock {
 
     /// The local instant at which the server clock reads `server_ms`.
     pub fn to_instant(&self, server_ms: u64) -> Instant {
-        let local_ms = server_ms as f64 - self.offset();
-        if local_ms >= 0.0 {
-            self.base + Duration::from_secs_f64(local_ms / 1000.0)
+        let secs = ((server_ms as f64 - self.offset()) / 1000.0).clamp(-MAX_SECS, MAX_SECS);
+        let delta = Duration::from_secs_f64(secs.abs());
+        let instant = if secs >= 0.0 {
+            self.base.checked_add(delta)
         } else {
-            self.base
-                .checked_sub(Duration::from_secs_f64(-local_ms / 1000.0))
-                .unwrap_or(self.base)
-        }
+            self.base.checked_sub(delta)
+        };
+        instant.unwrap_or(self.base)
     }
 }
 
@@ -71,7 +74,7 @@ fn median(values: impl Iterator<Item = f64>) -> Option<f64> {
     }
     values.sort_by(f64::total_cmp);
     let mid = values.len() / 2;
-    Some(if values.len() % 2 == 0 {
+    Some(if values.len().is_multiple_of(2) {
         (values[mid - 1] + values[mid]) / 2.0
     } else {
         values[mid]

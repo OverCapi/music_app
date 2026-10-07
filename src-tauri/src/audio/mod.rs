@@ -21,6 +21,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
+use group_protocol::MAX_POSITION_SECS;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
@@ -271,7 +272,7 @@ impl AudioHandle {
 
     pub fn seek(&self, secs: f64) -> AppResult<()> {
         self.local().map(drop)?;
-        self.send(AudioCommand::Seek(secs.max(0.0)))
+        self.send(AudioCommand::Seek(clamp_position(secs)))
     }
 
     pub fn set_volume(&self, volume: f32) -> AppResult<()> {
@@ -302,7 +303,7 @@ impl AudioHandle {
         self.send(AudioCommand::GroupLoad {
             token,
             path,
-            position: position.max(0.0),
+            position: clamp_position(position),
             start,
         })
     }
@@ -338,5 +339,15 @@ impl AudioHandle {
         self.tx
             .send(cmd)
             .map_err(|_| AppError::Internal("Le moteur audio n'est plus disponible".into()))
+    }
+}
+
+/// Keeps a position (possibly from another group member) in a range `Duration` can
+/// hold: NaN → 0, negative → 0, huge or infinite → [`MAX_POSITION_SECS`].
+fn clamp_position(secs: f64) -> f64 {
+    if secs.is_nan() {
+        0.0
+    } else {
+        secs.clamp(0.0, MAX_POSITION_SECS)
     }
 }
