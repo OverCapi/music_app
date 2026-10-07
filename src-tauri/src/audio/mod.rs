@@ -56,6 +56,17 @@ pub enum GroupStart {
     At(Instant),
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum RepeatMode {
+    #[default]
+    Off,
+    /// Loop the whole queue.
+    All,
+    /// Replay the current track.
+    One,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, specta::Type)]
 pub struct PlayerState {
     /// Library track being played (`None` in group mode or when nothing is loaded).
@@ -77,6 +88,9 @@ pub struct PlayerState {
     pub error: Option<String>,
     /// A listening group drives playback; local queue controls are disabled.
     pub group_mode: bool,
+    /// Next track is picked at random in the queue.
+    pub shuffle: bool,
+    pub repeat: RepeatMode,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, specta::Type)]
@@ -121,6 +135,17 @@ impl Shared {
 
     fn queue_changed(&mut self) {
         self.queue_dirty = true;
+    }
+
+    /// Index of the track to play after the current one; `None` when the queue is
+    /// exhausted (see [`Shared::append_random`]).
+    fn next_index(&self, auto: bool) -> Option<usize> {
+        self.queue.next_index(
+            self.status.shuffle,
+            self.status.repeat,
+            auto,
+            fastrand::u64(..),
+        )
     }
 
     /// Queue exhausted: appends a random library track and returns its index.
@@ -243,7 +268,7 @@ impl AudioHandle {
     pub fn next(&self) -> AppResult<()> {
         let next = {
             let mut s = self.local()?;
-            match s.queue.next_index() {
+            match s.next_index(false) {
                 Some(next) => Some(next),
                 None => s.append_random(&self.pick_random),
             }
@@ -268,6 +293,16 @@ impl AudioHandle {
             }
         };
         self.send(cmd)
+    }
+
+    pub fn set_shuffle(&self, shuffle: bool) -> AppResult<()> {
+        self.local()?.status.shuffle = shuffle;
+        self.send(AudioCommand::Publish)
+    }
+
+    pub fn set_repeat(&self, repeat: RepeatMode) -> AppResult<()> {
+        self.local()?.status.repeat = repeat;
+        self.send(AudioCommand::Publish)
     }
 
     pub fn seek(&self, secs: f64) -> AppResult<()> {

@@ -53,6 +53,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             audio::commands::previous,
             audio::commands::seek,
             audio::commands::set_volume,
+            audio::commands::set_shuffle,
+            audio::commands::set_repeat,
             library::commands::get_library,
             library::commands::add_tracks,
             library::commands::remove_track,

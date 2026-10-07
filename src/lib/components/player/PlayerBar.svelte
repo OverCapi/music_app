@@ -58,6 +58,10 @@
         : undefined,
   );
 
+  const repeatLabel = $derived(
+    { off: "Répéter : désactivé", all: "Répéter la file", one: "Répéter le titre" }[s.repeat],
+  );
+
   function togglePlay() {
     return groupMode ? group.togglePlay() : player.togglePlay();
   }
@@ -128,6 +132,16 @@
       {#if !groupMode}
         <button
           class="icon"
+          class:active={s.shuffle}
+          onclick={() => player.toggleShuffle()}
+          aria-label="Lecture aléatoire"
+          aria-pressed={s.shuffle}
+          title="Lecture aléatoire"
+        >
+          <Icon name="shuffle" />
+        </button>
+        <button
+          class="icon"
           onclick={() => player.stop()}
           disabled={!s.loaded}
           aria-label="Stop"
@@ -167,6 +181,17 @@
       >
         <Icon name="next" />
       </button>
+      {#if !groupMode}
+        <button
+          class="icon"
+          class:active={s.repeat !== "off"}
+          onclick={() => player.cycleRepeat()}
+          aria-label={repeatLabel}
+          title={repeatLabel}
+        >
+          <Icon name={s.repeat === "one" ? "repeatOne" : "repeat"} />
+        </button>
+      {/if}
     </div>
 
     <div class="progress">

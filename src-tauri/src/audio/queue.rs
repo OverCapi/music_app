@@ -1,6 +1,6 @@
 //! The play queue as a pure data structure (no I/O), unit-tested.
 
-use super::{QueueItem, QueueState};
+use super::{QueueItem, QueueState, RepeatMode};
 use crate::error::{AppError, AppResult};
 use crate::library::TrackId;
 
@@ -63,10 +63,35 @@ impl Queue {
         }
     }
 
-    /// Index after the current one, if the queue has it.
-    pub fn next_index(&self) -> Option<usize> {
+    /// Index to play after the current one, if the queue has it.
+    /// `auto`: the track ended by itself (repeat-one replays it; a manual "next" moves on).
+    /// `rand` picks the track when shuffling. `None` = queue exhausted.
+    pub fn next_index(
+        &self,
+        shuffle: bool,
+        repeat: RepeatMode,
+        auto: bool,
+        rand: u64,
+    ) -> Option<usize> {
+        let len = self.items.len();
+        if auto && repeat == RepeatMode::One && self.current.is_some() {
+            return self.current;
+        }
+        if shuffle && len > 1 {
+            // ponytail: plain random pick (a track can come back before all were played),
+            // a shuffled order would need a play history.
+            let mut pick = (rand % (len as u64 - 1)) as usize;
+            if self.current.is_some_and(|c| pick >= c) {
+                pick += 1;
+            }
+            return Some(pick);
+        }
         let next = self.current.map_or(0, |c| c + 1);
-        (next < self.items.len()).then_some(next)
+        if next < len {
+            Some(next)
+        } else {
+            (repeat != RepeatMode::Off && len > 0).then_some(0)
+        }
     }
 
     /// The current item cannot be removed.
@@ -146,14 +171,40 @@ mod tests {
 
     #[test]
     fn next_index_stops_at_end() {
+        use RepeatMode::Off;
         let mut q = Queue::default();
-        assert_eq!(q.next_index(), None);
+        assert_eq!(q.next_index(false, Off, true, 0), None);
         q.append([item(1)]);
-        assert_eq!(q.next_index(), Some(0));
+        assert_eq!(q.next_index(false, Off, true, 0), Some(0));
         q.set_current(0);
-        assert_eq!(q.next_index(), None);
+        assert_eq!(q.next_index(false, Off, true, 0), None);
         q.append([item(2)]);
-        assert_eq!(q.next_index(), Some(1));
+        assert_eq!(q.next_index(false, Off, true, 0), Some(1));
+    }
+
+    #[test]
+    fn repeat_modes() {
+        use RepeatMode::{All, One};
+        let mut q = queue(&[1, 2], 1);
+        assert_eq!(q.next_index(false, All, true, 0), Some(0));
+        assert_eq!(q.next_index(false, One, true, 0), Some(1));
+        // Manual "next" does not replay the track.
+        assert_eq!(q.next_index(false, One, false, 0), Some(0));
+        q.clear_except_current();
+        assert_eq!(q.next_index(false, All, true, 0), Some(0));
+    }
+
+    #[test]
+    fn shuffle_never_picks_current() {
+        let q = queue(&[1, 2, 3], 1);
+        for rand in 0..20 {
+            let next = q.next_index(true, RepeatMode::Off, true, rand).unwrap();
+            assert!(next != 1 && next < 3);
+        }
+        // Single track: nothing to shuffle.
+        let q = queue(&[1], 0);
+        assert_eq!(q.next_index(true, RepeatMode::Off, true, 5), None);
+        assert_eq!(q.next_index(true, RepeatMode::All, true, 5), Some(0));
     }
 
     #[test]

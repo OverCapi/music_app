@@ -1,6 +1,6 @@
 use tauri::State;
 
-use super::{AudioHandle, PlayerState, QueueState};
+use super::{AudioHandle, PlayerState, QueueState, RepeatMode};
 use crate::error::AppResult;
 use crate::library::{Library, TrackId};
 
@@ -96,4 +96,16 @@ pub fn seek(audio: State<'_, AudioHandle>, secs: f64) -> AppResult<()> {
 #[specta::specta]
 pub fn set_volume(audio: State<'_, AudioHandle>, volume: f32) -> AppResult<()> {
     audio.set_volume(volume)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_shuffle(audio: State<'_, AudioHandle>, shuffle: bool) -> AppResult<()> {
+    audio.set_shuffle(shuffle)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_repeat(audio: State<'_, AudioHandle>, repeat: RepeatMode) -> AppResult<()> {
+    audio.set_repeat(repeat)
 }

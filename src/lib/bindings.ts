@@ -20,6 +20,8 @@ export const commands = {
 	previous: () => __TAURI_INVOKE<null>("previous"),
 	seek: (secs: number | null) => __TAURI_INVOKE<null>("seek", { secs }),
 	setVolume: (volume: number | null) => __TAURI_INVOKE<null>("set_volume", { volume }),
+	setShuffle: (shuffle: boolean) => __TAURI_INVOKE<null>("set_shuffle", { shuffle }),
+	setRepeat: (repeat: RepeatMode) => __TAURI_INVOKE<null>("set_repeat", { repeat }),
 	getLibrary: () => __TAURI_INVOKE<Track[]>("get_library"),
 	/**  Async so reading the tags of many files doesn't block the main thread. */
 	addTracks: (paths: string[]) => __TAURI_INVOKE<Track[]>("add_tracks", { paths }),
@@ -174,6 +176,9 @@ export type PlayerState = {
 	error: string | null,
 	/**  A listening group drives playback; local queue controls are disabled. */
 	group_mode: boolean,
+	/**  Next track is picked at random in the queue. */
+	shuffle: boolean,
+	repeat: RepeatMode,
 };
 
 export type Playlist = {
@@ -213,6 +218,12 @@ export type QueueState = {
 	items: QueueItem[],
 	current: number | null,
 };
+
+export type RepeatMode = "off" | 
+/**  Loop the whole queue. */
+"all" | 
+/**  Replay the current track. */
+"one";
 
 export type SearchDetails = {
 	search_id: number,

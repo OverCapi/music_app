@@ -464,7 +464,7 @@ impl Engine {
             // End of track: advance through the queue, or pick a random library track.
             let next = {
                 let mut s = self.shared.lock().unwrap();
-                match s.queue.next_index() {
+                match s.next_index(true) {
                     Some(next) => Some(next),
                     None => s.append_random(&self.pick_random),
                 }

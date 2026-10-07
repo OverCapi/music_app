@@ -1,5 +1,11 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { commands, events, type PlayerState, type QueueState } from "#lib/bindings.ts";
+import {
+  commands,
+  events,
+  type PlayerState,
+  type RepeatMode,
+  type QueueState,
+} from "#lib/bindings.ts";
 import { attempt, toasts } from "#lib/stores/toasts.svelte.ts";
 
 class Player {
@@ -14,6 +20,8 @@ class Player {
     current: null,
     error: null,
     group_mode: false,
+    shuffle: false,
+    repeat: "off",
   });
   queue = $state<QueueState>({ items: [], current: null });
   /** `Date.now()` when `state.position` was received, to interpolate between events. */
@@ -70,6 +78,17 @@ class Player {
 
   stop() {
     return attempt(() => commands.stop());
+  }
+
+  toggleShuffle() {
+    return attempt(() => commands.setShuffle(!this.state.shuffle));
+  }
+
+  /** Off → whole queue → current track → off. */
+  cycleRepeat() {
+    const order: RepeatMode[] = ["off", "all", "one"];
+    const next = order[(order.indexOf(this.state.repeat) + 1) % order.length];
+    return attempt(() => commands.setRepeat(next));
   }
 
   seek(secs: number) {

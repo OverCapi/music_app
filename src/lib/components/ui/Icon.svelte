@@ -5,6 +5,11 @@
     stop: "M6 6h12v12H6z",
     previous: "M6 5h2v14H6zm3.5 7L19 5v14z",
     next: "M16 5h2v14h-2zM5 5l9.5 7L5 19z",
+    shuffle:
+      "M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04z",
+    repeat: "M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z",
+    repeatOne:
+      "M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2zm-4-2V9h-1l-2 1v1h1.5v4z",
     queue: "M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm13-3v8l6-4z",
     enqueue: "M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm14-2v-3h2v3h3v2h-3v3h-2v-3h-3v-2z",
     volume: "M4 9v6h4l5 4V5L8 9z",
