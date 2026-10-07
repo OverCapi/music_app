@@ -1,0 +1,43 @@
+<script lang="ts" module>
+  const paths = {
+    play: "M8 5v14l11-7z",
+    pause: "M6 5h4v14H6zm8 0h4v14h-4z",
+    stop: "M6 6h12v12H6z",
+    previous: "M6 5h2v14H6zm3.5 7L19 5v14z",
+    next: "M16 5h2v14h-2zM5 5l9.5 7L5 19z",
+    queue: "M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm13-3v8l6-4z",
+    enqueue: "M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm14-2v-3h2v3h3v2h-3v3h-2v-3h-3v-2z",
+    volume: "M4 9v6h4l5 4V5L8 9z",
+    plus: "M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z",
+    check: "m9.5 16.2-4.2-4.2-1.4 1.4 5.6 5.6 11-11-1.4-1.4z",
+    checkCircle:
+      "M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1.4 13.2-3.3-3.3-1.4 1.4 4.7 4.7 7.7-7.7-1.4-1.4z",
+    errorCircle: "M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 5v7h2V7zm0 9v2h2v-2z",
+    download: "M11 4h2v9.2l3.3-3.3 1.4 1.4L12 17l-5.7-5.7 1.4-1.4 3.3 3.3zM5 19h14v2H5z",
+    groupAdd:
+      "M8 4a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7zm0 9c3.3 0 6 1.5 6 3.8V19H2v-2.2C2 14.5 4.7 13 8 13zm10-4h2v3h3v2h-3v3h-2v-3h-3v-2h3z",
+    copy: "M8 3h11a2 2 0 0 1 2 2v11h-2V5H8zM5 7h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zm0 2v10h10V9z",
+    note: "M9 18a3 3 0 1 1-2-2.8V5l12-2v11a3 3 0 1 1-2-2.8V5.4l-8 1.3z",
+    library: "M4 4h2v16H4zm4 0h2v16H8zm4.5.3 1.9-.6 5 15.2-1.9.6z",
+    search:
+      "M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z",
+    group:
+      "M9 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7.5-1.5a3.5 3.5 0 0 1 0 7v-2a1.5 1.5 0 0 0 0-3zM9 13c3.9 0 7 1.8 7 4.5V20H2v-2.5C2 14.8 5.1 13 9 13zm0 2c-2.9 0-5 1.2-5 2.5v.5h10v-.5c0-1.3-2.1-2.5-5-2.5zm8.2-1.6c2.7.4 4.8 1.9 4.8 4.1V20h-4v-2h2v-.5c0-1-1.1-1.8-2.8-2.2z",
+  };
+
+  export type IconName = keyof typeof paths;
+</script>
+
+<script lang="ts">
+  let { name, size = 20 }: { name: IconName; size?: number } = $props();
+</script>
+
+<svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true">
+  <path d={paths[name]} />
+</svg>
+
+<style>
+  svg {
+    flex: none;
+  }
+</style>
