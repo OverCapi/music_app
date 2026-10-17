@@ -11,6 +11,9 @@ mod db;
 mod downloads;
 mod error;
 mod group;
+// used by the audio engine in a follow-up
+#[allow(dead_code)]
+mod history;
 mod library;
 mod playlists;
 mod search;
