@@ -141,7 +141,7 @@ pub struct MixInput {
 
 impl MixInput {
     /// The track itself is known: in the library, played or liked.
-    fn track_known(&self, id: &str) -> bool {
+    pub(crate) fn track_known(&self, id: &str) -> bool {
         self.library_ids.contains(id)
             || self.liked_ids.contains(id)
             || self.play_counts.contains_key(id)
@@ -154,7 +154,7 @@ impl MixInput {
 }
 
 /// Normalized artist, `None` when absent or blank.
-fn artist_key(artist: Option<&str>) -> Option<String> {
+pub(crate) fn artist_key(artist: Option<&str>) -> Option<String> {
     artist.map(normalize_artist).filter(|a| !a.is_empty())
 }
 
@@ -287,18 +287,18 @@ pub fn cluster_seeds(seeds: &[Seed], radios: &HashMap<String, Vec<RadioTrack>>) 
 }
 
 #[derive(Clone, Debug)]
-struct Candidate {
-    youtube_id: String,
-    title: String,
-    artist: Option<String>,
-    artist_key: Option<String>,
-    duration: f64,
-    score: f64,
+pub(crate) struct Candidate {
+    pub(crate) youtube_id: String,
+    pub(crate) title: String,
+    pub(crate) artist: Option<String>,
+    pub(crate) artist_key: Option<String>,
+    pub(crate) duration: f64,
+    pub(crate) score: f64,
 }
 
 /// Radio tracks of a cluster's seeds, scored (see the module doc), best first.
 /// Disliked tracks/artists and the cluster's own seeds are left out.
-fn candidates(input: &MixInput, seeds: &[&Seed]) -> Vec<Candidate> {
+pub(crate) fn candidates(input: &MixInput, seeds: &[&Seed]) -> Vec<Candidate> {
     let mut by_id: HashMap<&str, Candidate> = HashMap::new();
     for seed in seeds {
         let Some(radio) = input.radios.get(&seed.youtube_id) else {
@@ -591,12 +591,13 @@ impl Mixes {
         })
     }
 
-    /// Fetches the seeds' radios ([`RADIO_PARALLELISM`] at a time; a failing seed is
-    /// skipped) then builds the mixes. Fails only if no radio at all could be read.
-    pub async fn generate(&self) -> AppResult<Vec<Mix>> {
+    /// Builds the seeds and fetches their radios ([`RADIO_PARALLELISM`] at a time; a
+    /// failing seed is skipped). Without any seed, returns the input as is (no radio).
+    /// Fails only if no radio at all could be read.
+    pub(crate) async fn load_input(&self) -> AppResult<MixInput> {
         let mut input = self.input()?;
         if input.seeds.is_empty() {
-            return Ok(Vec::new());
+            return Ok(input);
         }
         // Owned ids and futures (no borrowing closures): keeps the future `Send`.
         let ids: Vec<String> = input.seeds.iter().map(|s| s.youtube_id.clone()).collect();
@@ -622,7 +623,12 @@ impl Mixes {
         if input.radios.is_empty() {
             return Err(AppError::Tool(NO_RADIO.into()));
         }
-        Ok(generate(&input))
+        Ok(input)
+    }
+
+    /// Loads the input ([`Self::load_input`]) then builds the mixes.
+    pub async fn generate(&self) -> AppResult<Vec<Mix>> {
+        Ok(generate(&self.load_input().await?))
     }
 }
 

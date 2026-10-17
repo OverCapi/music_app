@@ -83,6 +83,10 @@ export const commands = {
 	getRadio: (youtubeId: string) => __TAURI_INVOKE<RadioTrack[]>("get_radio", { youtubeId }),
 	/**  Mixes generated from what the user listens to (recomputed on each call). */
 	getMixes: () => __TAURI_INVOKE<Mix[]>("get_mixes"),
+	/**  The week's discoveries: stored ones when they exist, generated otherwise. */
+	getDiscoveries: () => __TAURI_INVOKE<Discovery>("get_discoveries"),
+	/**  Throws the week's discoveries away and generates new ones. */
+	refreshDiscoveries: () => __TAURI_INVOKE<Discovery>("refresh_discoveries"),
 	getSyncSettings: () => __TAURI_INVOKE<SyncSettings>("get_sync_settings"),
 	setYtmusicBrowser: (browser: string) => __TAURI_INVOKE<SyncSettings>("set_ytmusic_browser", { browser }),
 	/**
@@ -127,6 +131,12 @@ export type ArtistFeedback = {
 	artist: string,
 	label: string,
 	kind: FeedbackKind,
+};
+
+export type Discovery = {
+	/**  Unix timestamp (seconds) of the start of the week the tracks belong to. */
+	week_start: number,
+	tracks: MixTrack[],
 };
 
 export type DownloadProgress = {
