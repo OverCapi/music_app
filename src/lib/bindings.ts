@@ -81,6 +81,8 @@ export const commands = {
 	/**  What the user likes, computed from the listening history and the feedback. */
 	getTasteProfile: () => __TAURI_INVOKE<TasteProfile>("get_taste_profile"),
 	getRadio: (youtubeId: string) => __TAURI_INVOKE<RadioTrack[]>("get_radio", { youtubeId }),
+	/**  Mixes generated from what the user listens to (recomputed on each call). */
+	getMixes: () => __TAURI_INVOKE<Mix[]>("get_mixes"),
 	getSyncSettings: () => __TAURI_INVOKE<SyncSettings>("get_sync_settings"),
 	setYtmusicBrowser: (browser: string) => __TAURI_INVOKE<SyncSettings>("set_ytmusic_browser", { browser }),
 	/**
@@ -193,6 +195,28 @@ export type Member = {
 	username: string,
 	/**  Has downloaded the current track. */
 	ready: boolean,
+};
+
+export type Mix = {
+	/**  Stable for the same input: `<category>-<cluster rank>-<main seed id>`. */
+	id: string,
+	title: string,
+	category: MixCategory,
+	/**  Seeds of the cluster the mix comes from, main one first. */
+	seed_ids: string[],
+	tracks: MixTrack[],
+};
+
+export type MixCategory = "known" | "new" | "mixed";
+
+export type MixTrack = {
+	youtube_id: string,
+	title: string,
+	artist: string | null,
+	/**  Seconds, 0 when unknown. */
+	duration: number | null,
+	/**  In the library, already played or liked. */
+	known: boolean,
 };
 
 /**  A recorded listen. */
