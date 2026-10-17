@@ -39,6 +39,11 @@
     player.playFrom(tracks, index, "playlist");
   }
 
+  /** Plays the whole playlist; with shuffle on, from a random track. */
+  function playAll() {
+    playFrom(player.state.shuffle ? Math.floor(Math.random() * tracks.length) : 0);
+  }
+
   async function startRename() {
     if (!playlist) return;
     nameDraft = playlist.name;
@@ -77,7 +82,7 @@
       icon="note"
       playLabel="Lire la playlist"
       playDisabled={tracks.length === 0}
-      onplay={() => playFrom(0)}
+      onplay={playAll}
     >
       {#snippet title()}
         {#if renaming}
