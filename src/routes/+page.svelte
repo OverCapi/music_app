@@ -37,6 +37,11 @@
     player.playFrom(filtered, index, "library");
   }
 
+  /** Plays the whole visible list; with shuffle on, from a random track. */
+  function playAll() {
+    playFrom(player.state.shuffle ? Math.floor(Math.random() * filtered.length) : 0);
+  }
+
   // Only files in the app's music folder (downloads) are deleted; the backend checks.
   function removeLabel(track: Track): string {
     return track.youtube_id && track.path
@@ -60,7 +65,7 @@
     icon="library"
     playLabel="Lire la bibliothèque"
     playDisabled={filtered.length === 0}
-    onplay={() => playFrom(0)}
+    onplay={playAll}
   >
     {#snippet toolbar()}
       {#if library.tracks.length > 0}
