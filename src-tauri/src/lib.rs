@@ -10,7 +10,6 @@ mod audio;
 mod db;
 mod downloads;
 mod error;
-#[allow(dead_code)] // wired in the next step
 mod feedback;
 mod group;
 mod history;
@@ -30,6 +29,7 @@ use account::AccountStore;
 use audio::AudioHandle;
 use db::Db;
 use downloads::Downloads;
+use feedback::Feedback;
 use group::GroupClient;
 use history::History;
 use library::Library;
@@ -90,6 +90,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             group::commands::group_seek,
             group::commands::group_skip,
             history::commands::get_recent_plays,
+            feedback::commands::get_feedback,
+            feedback::commands::set_feedback,
+            feedback::commands::clear_feedback,
             sync::commands::get_sync_settings,
             sync::commands::set_ytmusic_browser,
             sync::commands::sync_youtube_music,
@@ -103,6 +106,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             downloads::DownloadProgress,
             group::GroupChanged,
             group::GroupError,
+            feedback::FeedbackChanged,
             sync::SyncProgress,
         ])
         .typ::<error::AppError>()
@@ -201,6 +205,7 @@ pub fn run() {
             let db = Db::open(&data_dir.join("music.db"), &data_dir)?;
             let library = Library::new(db.clone(), Some(handle.clone()));
             let history = History::new(db.clone());
+            app.manage(Feedback::new(db.clone(), Some(handle.clone())));
             app.manage(AudioHandle::spawn(
                 handle.clone(),
                 library.random_picker(),

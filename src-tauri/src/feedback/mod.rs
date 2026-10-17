@@ -7,6 +7,8 @@
 //!
 //! Every change emits [`FeedbackChanged`] with the full state.
 
+pub mod commands;
+
 use std::collections::HashSet;
 
 use group_protocol::is_valid_youtube_id;

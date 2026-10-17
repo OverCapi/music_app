@@ -74,6 +74,10 @@ export const commands = {
 	groupSkip: () => __TAURI_INVOKE<null>("group_skip"),
 	/**  Most recent listens first. */
 	getRecentPlays: (limit: number) => __TAURI_INVOKE<Play[]>("get_recent_plays", { limit }),
+	/**  Initial load; later changes are pushed by `FeedbackChanged`. */
+	getFeedback: () => __TAURI_INVOKE<FeedbackState>("get_feedback"),
+	setFeedback: (target: FeedbackTarget, kind: FeedbackKind) => __TAURI_INVOKE<null>("set_feedback", { target, kind }),
+	clearFeedback: (target: FeedbackTarget) => __TAURI_INVOKE<null>("clear_feedback", { target }),
 	getSyncSettings: () => __TAURI_INVOKE<SyncSettings>("get_sync_settings"),
 	setYtmusicBrowser: (browser: string) => __TAURI_INVOKE<SyncSettings>("set_ytmusic_browser", { browser }),
 	/**
@@ -86,6 +90,7 @@ export const commands = {
 /** Events */
 export const events = {
 	downloadProgress: makeEvent<DownloadProgress>("download-progress"),
+	feedbackChanged: makeEvent<FeedbackChanged>("feedback-changed"),
 	groupChanged: makeEvent<GroupChanged>("group-changed"),
 	groupError: makeEvent<GroupError>("group-error"),
 	libraryChanged: makeEvent<LibraryChanged>("library-changed"),
@@ -112,6 +117,13 @@ export type AppError =
 /**  An external tool (yt-dlp, ffmpeg) failed or is missing. */
 { kind: "tool"; message: string } | { kind: "io"; message: string } | { kind: "db"; message: string } | { kind: "internal"; message: string };
 
+export type ArtistFeedback = {
+	/**  Normalized key (see [`normalize_artist`]). */
+	artist: string,
+	label: string,
+	kind: FeedbackKind,
+};
+
 export type DownloadProgress = {
 	/**  YouTube id. */
 	id: string,
@@ -124,6 +136,21 @@ export type DownloadProgress = {
 export type DownloadStatus = "queued" | "downloading" | 
 /**  Extracting audio and embedding tags/cover (ffmpeg). */
 "converting" | "done" | "error" | "cancelled";
+
+export type FeedbackChanged = FeedbackState;
+
+export type FeedbackKind = "like" | "dislike";
+
+/**  Both lists, newest first. */
+export type FeedbackState = {
+	tracks: TrackFeedback[],
+	artists: ArtistFeedback[],
+};
+
+/**  What a feedback applies to. */
+export type FeedbackTarget = 
+/**  `label` is the track title, for display. */
+{ type: "track"; youtube_id: string; label: string } | { type: "artist"; name: string };
 
 /**  `None` when not in a group. */
 export type GroupChanged = GroupView | null;
@@ -346,6 +373,12 @@ export type TrackDownload = {
 	/**  0.0–1.0 while downloading, when the size is known. */
 	progress: number | null,
 	error: string | null,
+};
+
+export type TrackFeedback = {
+	youtube_id: string,
+	label: string,
+	kind: FeedbackKind,
 };
 
 export type TrackStatus = "queued" | "downloading" | "ready" | "error";
