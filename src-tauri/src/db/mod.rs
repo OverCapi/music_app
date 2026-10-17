@@ -14,7 +14,10 @@ use rusqlite_migration::{M, Migrations};
 
 use crate::error::{AppError, AppResult};
 
-const MIGRATIONS: &[M<'static>] = &[M::up(include_str!("migrations/001_initial.sql"))];
+const MIGRATIONS: &[M<'static>] = &[
+    M::up(include_str!("migrations/001_initial.sql")),
+    M::up(include_str!("migrations/002_plays.sql")),
+];
 
 /// Shared handle to the database. Cheap to clone; queries are short so one
 /// connection behind a mutex is enough.
