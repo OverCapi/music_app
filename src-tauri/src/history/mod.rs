@@ -5,6 +5,8 @@
 //! The audio engine hands a [`FinishedPlay`] over through a [`PlayRecorder`] when a
 //! listen ends.
 
+pub mod commands;
+
 use std::sync::Arc;
 
 use rusqlite::{Row, params};
@@ -169,7 +171,6 @@ impl History {
     }
 
     /// The latest listens, newest first.
-    #[allow(dead_code)] // read by the history command (next step)
     pub fn recent(&self, limit: u32) -> AppResult<Vec<Play>> {
         let conn = self.db.conn();
         let mut stmt = conn.prepare(&format!(

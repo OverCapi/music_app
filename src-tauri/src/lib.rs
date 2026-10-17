@@ -85,6 +85,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             group::commands::group_pause,
             group::commands::group_seek,
             group::commands::group_skip,
+            history::commands::get_recent_plays,
         ])
         .events(collect_events![
             audio::PlayerChanged,

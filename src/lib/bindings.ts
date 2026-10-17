@@ -72,6 +72,8 @@ export const commands = {
 	groupPause: () => __TAURI_INVOKE<null>("group_pause"),
 	groupSeek: (position: number | null) => __TAURI_INVOKE<null>("group_seek", { position }),
 	groupSkip: () => __TAURI_INVOKE<null>("group_skip"),
+	/**  Most recent listens first. */
+	getRecentPlays: (limit: number) => __TAURI_INVOKE<Play[]>("get_recent_plays", { limit }),
 };
 
 /** Events */
@@ -153,6 +155,24 @@ export type Member = {
 	username: string,
 	/**  Has downloaded the current track. */
 	ready: boolean,
+};
+
+/**  A recorded listen. */
+export type Play = {
+	id: number,
+	/**  `None` for group tracks and for tracks removed from the library since. */
+	track_id: number | null,
+	youtube_id: string | null,
+	title: string,
+	artist: string | null,
+	source: PlaySource,
+	/**  Unix timestamp (seconds). */
+	started_at: number,
+	/**  Seconds actually heard. */
+	listened: number | null,
+	/**  Seconds (0 when unknown). */
+	duration: number | null,
+	completed: boolean,
 };
 
 /**  Where a listen came from. */
