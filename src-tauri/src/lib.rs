@@ -109,6 +109,23 @@ fn export_bindings(builder: &Builder<tauri::Wry>) {
 /// `MUSIC_APP_PROFILE=<name>` gives this instance its own data and cache dirs
 /// (database, group temp files), e.g. to run two clients side by side on one
 /// machine. The downloaded music folder stays shared.
+/// Downloads library tracks that have no file yet when the audio engine needs them.
+/// `Downloads` and `Library` are looked up at call time (managed after the engine).
+fn track_fetcher(app: tauri::AppHandle) -> audio::TrackFetcher {
+    std::sync::Arc::new(move |_track_id, youtube_id, done| {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let fetch = match (app.try_state::<Downloads>(), app.try_state::<Library>()) {
+                (Some(downloads), Some(library)) => {
+                    downloads.fetch(app.clone(), library.inner().clone(), youtube_id)
+                }
+                _ => return done(Err("L'application démarre encore".into())),
+            };
+            done(fetch.await.map_err(|e| e.to_string()));
+        });
+    })
+}
+
 fn profile_dirs(app: &tauri::App) -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
     let data_dir = app.path().app_data_dir()?;
     let cache_dir = app.path().app_cache_dir()?;
@@ -180,6 +197,7 @@ pub fn run() {
                 handle.clone(),
                 library.random_picker(),
                 history.recorder(),
+                track_fetcher(handle.clone()),
             ));
             app.manage(history);
             app.manage(Playlists::new(db.clone(), Some(handle.clone())));

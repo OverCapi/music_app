@@ -119,6 +119,19 @@ impl Queue {
         }
     }
 
+    /// Sets the file of every entry of `track_id` (just downloaded). Returns whether
+    /// anything changed.
+    pub fn set_path(&mut self, track_id: TrackId, path: &str) -> bool {
+        let mut changed = false;
+        for item in self.items.iter_mut().filter(|i| i.track_id == track_id) {
+            if item.path.as_deref() != Some(path) {
+                item.path = Some(path.to_owned());
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Drops every entry of `track_id` except the current one. Returns whether anything changed.
     pub fn forget_track(&mut self, track_id: TrackId) -> bool {
         let before = self.items.len();
@@ -146,7 +159,8 @@ mod tests {
     fn item(id: TrackId) -> QueueItem {
         QueueItem {
             track_id: id,
-            path: format!("/music/{id}.mp3"),
+            path: Some(format!("/music/{id}.mp3")),
+            youtube_id: None,
             source: PlaySource::Library,
         }
     }
@@ -250,5 +264,18 @@ mod tests {
         let state = q.state();
         assert_eq!(state.items.len(), 2);
         assert_eq!(state.current, Some(1));
+    }
+
+    #[test]
+    fn set_path_fills_every_entry_of_the_track() {
+        let mut q = queue(&[1, 2, 1], 0);
+        for item in &mut q.items {
+            item.path = None;
+        }
+        assert!(q.set_path(1, "/music/1.opus"));
+        assert!(!q.set_path(1, "/music/1.opus"));
+        let paths: Vec<_> = q.items.iter().map(|i| i.path.as_deref()).collect();
+        assert_eq!(paths, [Some("/music/1.opus"), None, Some("/music/1.opus")]);
+        assert!(!q.set_path(3, "/x"));
     }
 }

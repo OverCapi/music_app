@@ -9,6 +9,10 @@
 //! ([`GroupStart`]): local queue commands return [`AppError::GroupMode`], tracks never
 //! advance on their own and the end of a track is reported through a callback.
 //!
+//! Tracks not downloaded yet are fetched when they come up (the engine shows them
+//! as `loading` meanwhile, through a [`TrackFetcher`]), and the next queue track is
+//! fetched in advance while the current one plays.
+//!
 //! The engine pushes [`PlayerChanged`] on every state change (and a few times per
 //! second while playing) and [`QueueChanged`] on every queue change: the UI never polls.
 
@@ -35,16 +39,25 @@ use queue::Queue;
 /// "Previous" restarts the current track instead when we're past this point.
 const RESTART_THRESHOLD_SECS: f64 = 3.0;
 
-/// One queue entry: the library track, its resolved path and where it came from.
+/// One queue entry: the library track, its file and where it came from.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct QueueItem {
     pub track_id: TrackId,
-    pub path: String,
+    /// `None` until downloaded (then `youtube_id` is set).
+    pub path: Option<String>,
+    pub youtube_id: Option<String>,
     pub source: PlaySource,
 }
 
 /// Picks a random library track, avoiding the given one when possible.
 pub type RandomPicker = Arc<dyn Fn(Option<TrackId>) -> Option<QueueItem> + Send + Sync>;
+
+/// Called once a fetch ends, with the file path or an error message.
+pub type FetchDone = Box<dyn FnOnce(Result<String, String>) + Send>;
+
+/// Downloads a library track that has no file yet (track id, YouTube id) and
+/// calls the callback when done. Must not block: called on the audio thread.
+pub type TrackFetcher = Arc<dyn Fn(TrackId, String, FetchDone) + Send + Sync>;
 
 /// Called on the audio thread with the group token of the track that just finished.
 pub type GroupEndedCallback = Arc<dyn Fn(u64) + Send + Sync>;
@@ -79,6 +92,8 @@ pub struct PlayerState {
     pub playing: bool,
     /// False when nothing is loaded (never played, stopped, or queue finished).
     pub loaded: bool,
+    /// The current track is being downloaded; it starts when the file arrives.
+    pub loading: bool,
     /// Seconds.
     pub position: f64,
     /// Seconds (0 when unknown).
@@ -169,17 +184,25 @@ pub struct AudioHandle {
 
 impl AudioHandle {
     /// Spawns the audio thread. `app` is used to emit [`PlayerChanged`] / [`QueueChanged`];
-    /// every listen is handed to `record` when it ends.
-    pub fn spawn(app: AppHandle, pick_random: RandomPicker, record: PlayRecorder) -> Self {
+    /// every listen is handed to `record` when it ends; `fetch` downloads tracks
+    /// that have no file yet.
+    pub fn spawn(
+        app: AppHandle,
+        pick_random: RandomPicker,
+        record: PlayRecorder,
+        fetch: TrackFetcher,
+    ) -> Self {
         let (tx, rx) = mpsc::channel();
         let shared = Arc::new(Mutex::new(Shared::new()));
-        engine::spawn(
+        engine::spawn(engine::EngineParts {
             app,
             rx,
-            Arc::clone(&shared),
-            Arc::clone(&pick_random),
+            tx: tx.clone(),
+            shared: Arc::clone(&shared),
+            pick_random: Arc::clone(&pick_random),
             record,
-        );
+            fetch,
+        });
         Self {
             tx,
             shared,

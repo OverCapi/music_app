@@ -192,6 +192,8 @@ export type PlayerState = {
 	playing: boolean,
 	/**  False when nothing is loaded (never played, stopped, or queue finished). */
 	loaded: boolean,
+	/**  The current track is being downloaded; it starts when the file arrives. */
+	loading: boolean,
 	/**  Seconds. */
 	position: number | null,
 	/**  Seconds (0 when unknown). */
@@ -236,10 +238,12 @@ export type QueueEntry = {
 	added_by: string,
 };
 
-/**  One queue entry: the library track, its resolved path and where it came from. */
+/**  One queue entry: the library track, its file and where it came from. */
 export type QueueItem = {
 	track_id: number,
-	path: string,
+	/**  `None` until downloaded (then `youtube_id` is set). */
+	path: string | null,
+	youtube_id: string | null,
 	source: PlaySource,
 };
 

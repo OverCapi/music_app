@@ -71,7 +71,7 @@ pub struct Library {
 
 const COLUMNS: &str = "id, path, title, artist, album, duration, added_at, youtube_id";
 const GONE: &str = "Ce titre n'est plus dans la bibliothèque";
-const NOT_DOWNLOADED: &str = "Ce titre n'est pas encore téléchargé";
+const NO_VIDEO: &str = "Ce titre n'a pas encore de vidéo YouTube associée";
 
 impl Library {
     /// `app` is `None` in tests (no events emitted).
@@ -121,21 +121,24 @@ impl Library {
         }))
     }
 
-    /// Resolves ids to queue items, in order (error if one is unknown or not
-    /// downloaded yet).
+    /// Resolves ids to queue items, in order. Errors if one is unknown, or has
+    /// neither a file nor a YouTube id to download it from.
     pub fn queue_items(&self, ids: &[TrackId], source: PlaySource) -> AppResult<Vec<QueueItem>> {
         let conn = self.db.conn();
-        let mut stmt = conn.prepare("SELECT path FROM tracks WHERE id = ?1")?;
+        let mut stmt = conn.prepare("SELECT path, youtube_id FROM tracks WHERE id = ?1")?;
         ids.iter()
             .map(|&track_id| {
-                let path: Option<String> = stmt
-                    .query_row([track_id], |row| row.get(0))
+                let (path, youtube_id): (Option<String>, Option<String>) = stmt
+                    .query_row([track_id], |row| Ok((row.get(0)?, row.get(1)?)))
                     .optional()?
                     .ok_or_else(|| AppError::not_found(GONE))?;
-                let path = path.ok_or_else(|| AppError::invalid(NOT_DOWNLOADED))?;
+                if path.is_none() && youtube_id.is_none() {
+                    return Err(AppError::invalid(NO_VIDEO));
+                }
                 Ok(QueueItem {
                     track_id,
                     path,
+                    youtube_id,
                     source,
                 })
             })
@@ -319,13 +322,14 @@ impl Library {
             // `id IS ?1` sorts the avoided track last, so it is only picked when alone.
             db.conn()
                 .query_row(
-                    "SELECT id, path FROM tracks WHERE path IS NOT NULL
+                    "SELECT id, path, youtube_id FROM tracks WHERE path IS NOT NULL
                      ORDER BY id IS ?1, random() LIMIT 1",
                     [avoid],
                     |row| {
                         Ok(QueueItem {
                             track_id: row.get(0)?,
                             path: row.get(1)?,
+                            youtube_id: row.get(2)?,
                             source: PlaySource::Autoplay,
                         })
                     },
@@ -526,7 +530,7 @@ pub(crate) mod tests {
         let a = insert_track(&lib, "/a.mp3");
         let b = insert_track(&lib, "/b.mp3");
         let items = lib.queue_items(&[b, a], PlaySource::Library).unwrap();
-        assert_eq!(items[0].path, "/b.mp3");
+        assert_eq!(items[0].path.as_deref(), Some("/b.mp3"));
         assert_eq!(items[1].track_id, a);
 
         assert_eq!(lib.remove(a).unwrap().path.as_deref(), Some("/a.mp3"));
@@ -617,8 +621,19 @@ pub(crate) mod tests {
             .add_remote(&[remote("Get Lucky", "Daft Punk", 248.0, Some("aaaaaaaaaaa"))])
             .unwrap()[0];
 
-        assert!(lib.queue_items(&[id], PlaySource::Library).is_err());
+        // Queued without a file: the engine downloads it when it comes up.
+        let item = &lib.queue_items(&[id], PlaySource::Library).unwrap()[0];
+        assert_eq!(item.path, None);
+        assert_eq!(item.youtube_id.as_deref(), Some("aaaaaaaaaaa"));
         assert!(lib.random_picker()(None).is_none());
+        // Nothing to download it from: refused.
+        let spotify_only = lib
+            .add_remote(&[remote("Unmatched", "Someone", 100.0, None)])
+            .unwrap()[0];
+        assert!(
+            lib.queue_items(&[spotify_only], PlaySource::Library)
+                .is_err()
+        );
         assert_eq!(lib.cover(id).unwrap(), None);
 
         // The download fills the existing track and keeps its metadata.
@@ -628,9 +643,9 @@ pub(crate) mod tests {
         assert_eq!(downloaded.path.as_deref(), Some(wav.as_str()));
         assert_eq!(
             lib.queue_items(&[id], PlaySource::Library).unwrap()[0].path,
-            wav
+            Some(wav)
         );
-        assert_eq!(lib.tracks().unwrap().len(), 1);
+        assert_eq!(lib.tracks().unwrap().len(), 2);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

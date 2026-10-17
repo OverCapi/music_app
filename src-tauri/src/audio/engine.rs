@@ -1,9 +1,10 @@
 //! Engine thread: owns the rodio output and `Player`, runs the command loop and
 //! pushes [`PlayerChanged`] / [`QueueChanged`] to the UI.
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::path::Path;
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -16,7 +17,8 @@ use tauri_specta::Event;
 use super::listen::Listen;
 use super::opus::OpusSource;
 use super::{
-    GroupEndedCallback, GroupStart, PlayerChanged, PlayerState, QueueChanged, RandomPicker, Shared,
+    GroupEndedCallback, GroupStart, PlayerChanged, PlayerState, QueueChanged, QueueItem,
+    RandomPicker, Shared, TrackFetcher,
 };
 use crate::db::now_secs;
 use crate::error::{AppError, AppResult};
@@ -42,6 +44,11 @@ pub(super) enum AudioCommand {
     SetVolume(f32),
     /// The handle changed the queue: emit it.
     Publish,
+    /// A [`TrackFetcher`] call ended: the file path, or an error message.
+    Fetched {
+        track_id: TrackId,
+        result: Result<String, String>,
+    },
     EnterGroup(GroupEndedCallback),
     LeaveGroup,
     GroupLoad {
@@ -54,26 +61,35 @@ pub(super) enum AudioCommand {
     GroupStop,
 }
 
-pub(super) fn spawn(
-    app: AppHandle,
-    rx: Receiver<AudioCommand>,
-    shared: Arc<Mutex<Shared>>,
-    pick_random: RandomPicker,
-    record: PlayRecorder,
-) {
+/// What the engine thread is built from.
+pub(super) struct EngineParts {
+    pub app: AppHandle,
+    pub rx: Receiver<AudioCommand>,
+    /// To send [`AudioCommand::Fetched`] back to the engine.
+    pub tx: Sender<AudioCommand>,
+    pub shared: Arc<Mutex<Shared>>,
+    pub pick_random: RandomPicker,
+    pub record: PlayRecorder,
+    pub fetch: TrackFetcher,
+}
+
+pub(super) fn spawn(parts: EngineParts) {
     thread::Builder::new()
         .name("audio".into())
-        .spawn(move || run(app, rx, shared, pick_random, record))
+        .spawn(move || run(parts))
         .expect("failed to spawn audio thread");
 }
 
-fn run(
-    app: AppHandle,
-    rx: Receiver<AudioCommand>,
-    shared: Arc<Mutex<Shared>>,
-    pick_random: RandomPicker,
-    record: PlayRecorder,
-) {
+fn run(parts: EngineParts) {
+    let EngineParts {
+        app,
+        rx,
+        tx,
+        shared,
+        pick_random,
+        record,
+        fetch,
+    } = parts;
     let opened = DeviceSinkBuilder::from_default_device()
         .map(|b| b.with_error_callback(log_stream_error))
         .and_then(|b| b.open_sink_or_fallback());
@@ -92,6 +108,10 @@ fn run(
         shared,
         pick_random,
         record,
+        fetch,
+        tx,
+        waiting: None,
+        fetching: HashSet::new(),
         listen: None,
         group: None,
         app,
@@ -159,6 +179,12 @@ struct Engine {
     shared: Arc<Mutex<Shared>>,
     pick_random: RandomPicker,
     record: PlayRecorder,
+    fetch: TrackFetcher,
+    tx: Sender<AudioCommand>,
+    /// Current queue track being downloaded; it plays when its file arrives.
+    waiting: Option<TrackId>,
+    /// Tracks with a fetch in flight (current or prefetched).
+    fetching: HashSet<TrackId>,
     /// Listen of the track loaded in `player`, handed to `record` when it ends.
     listen: Option<Listen>,
     /// Set while a listening group drives playback.
@@ -215,6 +241,8 @@ impl Engine {
                     p.pause();
                 }
                 self.pause_listen();
+                // Paused while downloading: don't start when the file arrives.
+                self.stop_waiting();
             }
             AudioCommand::Stop => self.unload(),
             AudioCommand::Seek(secs) => {
@@ -230,7 +258,9 @@ impl Engine {
                     p.set_volume(volume);
                 }
             }
-            AudioCommand::Publish => {}
+            // The queue may have a new next track to fetch.
+            AudioCommand::Publish => self.prefetch_next(),
+            AudioCommand::Fetched { track_id, result } => self.fetched(track_id, result),
             AudioCommand::EnterGroup(on_ended) => self.enter_group(on_ended),
             AudioCommand::LeaveGroup => self.leave_group(),
             AudioCommand::GroupLoad {
@@ -442,14 +472,25 @@ impl Engine {
         }
     }
 
-    /// Plays `queue[index]`, skipping forward past files that fail to open.
+    /// Plays `queue[index]`, skipping forward past files that fail to open. A track
+    /// without a file is downloaded first (the player shows it as loading).
     fn load_from(&mut self, mut index: usize) {
         loop {
             let Some(item) = self.shared().queue.get(index).cloned() else {
                 self.unload();
                 return;
             };
-            match open_track(&item.path) {
+            let Some(path) = item.path.clone() else {
+                if let Some(youtube_id) = item.youtube_id.clone() {
+                    self.wait_for(index, &item, youtube_id);
+                    return;
+                }
+                // `queue_items` refuses those; only here if the track changed since.
+                self.shared().status.error = Some("Aucune vidéo YouTube associée".into());
+                index += 1;
+                continue;
+            };
+            match open_track(&path) {
                 Ok((source, duration)) => {
                     // Only now: a file that fails to open must not end the current listen.
                     self.finish_listen(false);
@@ -470,18 +511,22 @@ impl Engine {
                     s.queue.set_current(index);
                     s.queue_changed();
                     s.status.track_id = Some(item.track_id);
-                    s.status.path = Some(item.path);
+                    s.status.path = Some(path);
                     s.status.duration = duration;
                     s.status.position = 0.0;
                     s.status.playing = true;
                     s.status.loaded = true;
+                    s.status.loading = false;
+                    drop(s);
+                    self.waiting = None;
+                    self.prefetch_next();
                     return;
                 }
                 Err(e) => {
-                    let name = Path::new(&item.path)
+                    let name = Path::new(&path)
                         .file_name()
-                        .map_or(item.path.clone(), |n| n.to_string_lossy().into_owned());
-                    tracing::warn!("cannot play {}: {e}", item.path);
+                        .map_or(path.clone(), |n| n.to_string_lossy().into_owned());
+                    tracing::warn!("cannot play {path}: {e}");
                     self.shared().status.error = Some(format!("{name} : {e}"));
                     index += 1;
                 }
@@ -492,10 +537,102 @@ impl Engine {
     fn unload(&mut self) {
         self.finish_listen(false);
         self.player = None;
+        self.waiting = None;
         let mut s = self.shared();
         s.status.playing = false;
         s.status.loaded = false;
+        s.status.loading = false;
         s.status.position = 0.0;
+    }
+
+    /// Makes `queue[index]` current, shown as loading, and downloads it.
+    fn wait_for(&mut self, index: usize, item: &QueueItem, youtube_id: String) {
+        // The previous track stops now.
+        self.unload();
+        {
+            let mut s = self.shared();
+            s.queue.set_current(index);
+            s.queue_changed();
+            s.status.track_id = Some(item.track_id);
+            s.status.path = None;
+            s.status.duration = 0.0;
+            s.status.loading = true;
+        }
+        self.waiting = Some(item.track_id);
+        self.request(item.track_id, youtube_id);
+    }
+
+    fn stop_waiting(&mut self) {
+        if self.waiting.take().is_some() {
+            self.shared().status.loading = false;
+        }
+    }
+
+    /// Starts a fetch unless one is already in flight for this track.
+    fn request(&mut self, track_id: TrackId, youtube_id: String) {
+        if !self.fetching.insert(track_id) {
+            return;
+        }
+        let tx = self.tx.clone();
+        (self.fetch)(
+            track_id,
+            youtube_id,
+            Box::new(move |result| {
+                // Nothing to do if the engine is gone.
+                let _ = tx.send(AudioCommand::Fetched { track_id, result });
+            }),
+        );
+    }
+
+    /// Downloads the track after the current one in advance, so it starts without
+    /// a gap. Not when shuffling: the next track isn't known yet.
+    fn prefetch_next(&mut self) {
+        let next = {
+            let s = self.shared();
+            if self.group.is_some() || !s.status.loaded || s.status.shuffle {
+                return;
+            }
+            s.next_index(false)
+                .and_then(|i| s.queue.get(i))
+                .filter(|item| item.path.is_none())
+                .and_then(|item| Some((item.track_id, item.youtube_id.clone()?)))
+        };
+        if let Some((track_id, youtube_id)) = next {
+            self.request(track_id, youtube_id);
+        }
+    }
+
+    fn fetched(&mut self, track_id: TrackId, result: Result<String, String>) {
+        self.fetching.remove(&track_id);
+        let waited = self.waiting == Some(track_id) && self.group.is_none();
+        let current = {
+            let mut s = self.shared();
+            if let Ok(path) = &result
+                && s.queue.set_path(track_id, path)
+            {
+                s.queue_changed();
+            }
+            s.queue
+                .current()
+                .filter(|&c| s.queue.get(c).is_some_and(|i| i.track_id == track_id))
+        };
+        if !waited {
+            return;
+        }
+        // The current track changed meanwhile (queue edited): stay stopped.
+        let Some(index) = current else {
+            self.stop_waiting();
+            return;
+        };
+        self.waiting = None;
+        match result {
+            Ok(_) => self.load_from(index),
+            Err(e) => {
+                tracing::warn!("cannot download track {track_id}: {e}");
+                self.shared().status.error = Some(format!("Téléchargement impossible : {e}"));
+                self.load_from(index + 1);
+            }
+        }
     }
 
     /// Hands the current listen over to the history (never with `shared` locked:
