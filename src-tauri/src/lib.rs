@@ -8,6 +8,7 @@
 mod account;
 mod audio;
 mod db;
+mod discoveries;
 mod downloads;
 mod error;
 mod feedback;
@@ -99,6 +100,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             taste::commands::get_taste_profile,
             radio::commands::get_radio,
             mixes::commands::get_mixes,
+            discoveries::commands::get_discoveries,
+            discoveries::commands::refresh_discoveries,
             sync::commands::get_sync_settings,
             sync::commands::set_ytmusic_browser,
             sync::commands::sync_youtube_music,
@@ -222,13 +225,15 @@ pub fn run() {
                 track_fetcher(handle.clone()),
             ));
             let taste = taste::Taste::new(history.clone(), feedback.clone());
-            app.manage(mixes::Mixes::new(
+            let mixes = mixes::Mixes::new(
                 taste.clone(),
                 radio,
                 library.clone(),
                 feedback,
                 history.clone(),
-            ));
+            );
+            app.manage(discoveries::Discoveries::new(db.clone(), mixes.clone()));
+            app.manage(mixes);
             app.manage(taste);
             app.manage(history);
             let playlists = Playlists::new(db.clone(), Some(handle.clone()));
