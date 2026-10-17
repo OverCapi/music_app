@@ -5,6 +5,7 @@
   import { player } from "#lib/stores/player.svelte.ts";
   import { formatTime } from "#lib/format.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
+  import NotDownloaded from "#lib/components/library/NotDownloaded.svelte";
 
   let {
     tracks,
@@ -33,6 +34,7 @@
   {#each tracks as track, i (track.id)}
     {@const current = player.state.track_id === track.id}
     {@const playing = current && player.state.playing}
+    {@const loading = current && player.state.loading}
     <div
       class="row track"
       class:current
@@ -40,10 +42,10 @@
       tabindex="0"
       ondblclick={() => onplay(i)}
       onkeydown={(e) => e.key === "Enter" && onplay(i)}
-      title={track.path}
+      title={track.path ?? "Pas encore téléchargé"}
     >
       <span class="index">
-        <span class="num">{playing ? "▶" : i + 1}</span>
+        <span class="num">{playing ? "▶" : loading ? "…" : i + 1}</span>
         <button
           class="row-play"
           onclick={() => (current ? player.togglePlay() : onplay(i))}
@@ -60,7 +62,12 @@
           onerror={(e) => ((e.currentTarget as HTMLElement).style.visibility = "hidden")}
         />
         <span class="meta">
-          <span class="title">{track.title}</span>
+          <span class="title-line">
+            <span class="title">{track.title}</span>
+            {#if track.path === null}
+              <NotDownloaded youtubeId={track.youtube_id} />
+            {/if}
+          </span>
           <span class="artist">{track.artist ?? "Artiste inconnu"}</span>
         </span>
       </span>
@@ -177,6 +184,13 @@
   .meta {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+  }
+
+  .title-line {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
     min-width: 0;
   }
 

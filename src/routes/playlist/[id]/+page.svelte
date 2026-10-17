@@ -36,11 +36,7 @@
   });
 
   function playFrom(index: number) {
-    player.playFrom(
-      tracks.map((t) => t.id),
-      index,
-      "playlist",
-    );
+    player.playFrom(tracks, index, "playlist");
   }
 
   async function startRename() {
