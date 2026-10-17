@@ -11,6 +11,10 @@ One Cargo workspace (root `Cargo.toml`, edition 2024, shared `[workspace.depende
 - `crates/server/` — listening-group server (crate `music-group-server`)
 - `crates/protocol/` — crate `group-protocol`, WebSocket/REST types shared by both (feature `specta` derives TS types for the app)
 
+## Model choice
+
+When delegating work to subagents, pick the model by difficulty: **Haiku** for very simple tasks (a SQL file, a thin command wrapper, regenerating bindings), **Sonnet** by default, **Opus** only when the task needs a lot of reasoning (concurrency, engine/state-machine edge cases). Split large tasks into small ones so each can use the right model.
+
 ## Commands
 
 ```sh
