@@ -39,6 +39,7 @@
     player.playFrom(
       tracks.map((t) => t.id),
       index,
+      "playlist",
     );
   }
 
@@ -122,7 +123,7 @@
       {:else}
         <TrackTable {tracks} onplay={playFrom}>
           {#snippet actions(track)}
-            <EnqueueButton trackId={track.id} />
+            <EnqueueButton trackId={track.id} source="playlist" />
             <AddToPlaylist trackId={track.id} exclude={id} />
             <button
               class="row-action"

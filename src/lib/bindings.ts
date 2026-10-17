@@ -5,9 +5,12 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
-	/**  Replaces the queue with `track_ids` and plays `track_ids[start]`. */
-	playQueue: (trackIds: number[], start: number) => __TAURI_INVOKE<null>("play_queue", { trackIds, start }),
-	enqueue: (trackIds: number[]) => __TAURI_INVOKE<null>("enqueue", { trackIds }),
+	/**
+	 *  Replaces the queue with `track_ids` and plays `track_ids[start]`; `source` is
+	 *  where the listens come from (for the history).
+	 */
+	playQueue: (trackIds: number[], start: number, source: PlaySource) => __TAURI_INVOKE<null>("play_queue", { trackIds, start, source }),
+	enqueue: (trackIds: number[], source: PlaySource) => __TAURI_INVOKE<null>("enqueue", { trackIds, source }),
 	playIndex: (index: number) => __TAURI_INVOKE<null>("play_index", { index }),
 	removeFromQueue: (index: number) => __TAURI_INVOKE<null>("remove_from_queue", { index }),
 	clearQueue: () => __TAURI_INVOKE<null>("clear_queue"),
@@ -152,6 +155,11 @@ export type Member = {
 	ready: boolean,
 };
 
+/**  Where a listen came from. */
+export type PlaySource = "library" | "playlist" | 
+/**  Random track picked because the queue ran out. */
+"autoplay" | "group";
+
 export type Playback = { status: "idle" } | { status: "preparing"; deadline_ms: number } | { status: "playing"; position: number | null; at_ms: number } | { status: "paused"; position: number | null };
 
 export type PlayerChanged = PlayerState;
@@ -208,10 +216,11 @@ export type QueueEntry = {
 	added_by: string,
 };
 
-/**  One queue entry: the library track and its resolved path. */
+/**  One queue entry: the library track, its resolved path and where it came from. */
 export type QueueItem = {
 	track_id: number,
 	path: string,
+	source: PlaySource,
 };
 
 export type QueueState = {

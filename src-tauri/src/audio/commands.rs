@@ -2,9 +2,11 @@ use tauri::State;
 
 use super::{AudioHandle, PlayerState, QueueState, RepeatMode};
 use crate::error::AppResult;
+use crate::history::PlaySource;
 use crate::library::{Library, TrackId};
 
-/// Replaces the queue with `track_ids` and plays `track_ids[start]`.
+/// Replaces the queue with `track_ids` and plays `track_ids[start]`; `source` is
+/// where the listens come from (for the history).
 #[tauri::command]
 #[specta::specta]
 pub fn play_queue(
@@ -12,8 +14,9 @@ pub fn play_queue(
     library: State<'_, Library>,
     track_ids: Vec<TrackId>,
     start: u32,
+    source: PlaySource,
 ) -> AppResult<()> {
-    audio.play_queue(library.queue_items(&track_ids)?, start as usize)
+    audio.play_queue(library.queue_items(&track_ids, source)?, start as usize)
 }
 
 #[tauri::command]
@@ -22,8 +25,9 @@ pub fn enqueue(
     audio: State<'_, AudioHandle>,
     library: State<'_, Library>,
     track_ids: Vec<TrackId>,
+    source: PlaySource,
 ) -> AppResult<()> {
-    audio.enqueue(library.queue_items(&track_ids)?)
+    audio.enqueue(library.queue_items(&track_ids, source)?)
 }
 
 #[tauri::command]

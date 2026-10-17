@@ -18,6 +18,7 @@ use super::{
     GroupEndedCallback, GroupStart, PlayerChanged, PlayerState, QueueChanged, RandomPicker, Shared,
 };
 use crate::error::{AppError, AppResult};
+use crate::history::PlayedTrack;
 use crate::library::TrackId;
 
 type TrackSource = Box<dyn Source + Send>;
@@ -46,6 +47,7 @@ pub(super) enum AudioCommand {
         path: String,
         position: f64,
         start: GroupStart,
+        track: PlayedTrack,
     },
     GroupStop,
 }
@@ -166,6 +168,10 @@ struct GroupMode {
     saved_track_id: Option<TrackId>,
     saved_path: Option<String>,
     saved_duration: f64,
+    /// The group track loaded in `player` (always `PlayedTrack::Group`), used to
+    /// record the listen.
+    #[allow(dead_code)] // read by listen recording (next step)
+    track: Option<PlayedTrack>,
 }
 
 impl Engine {
@@ -223,7 +229,8 @@ impl Engine {
                 path,
                 position,
                 start,
-            } => self.group_load(token, path, position, start),
+                track,
+            } => self.group_load(token, path, position, start, track),
             AudioCommand::GroupStop => self.group_stop(),
         }
     }
@@ -273,6 +280,7 @@ impl Engine {
             on_ended,
             token: None,
             start_at: None,
+            track: None,
             saved_track_id: s.status.track_id.take(),
             saved_path: s.status.path.take(),
             saved_duration: std::mem::take(&mut s.status.duration),
@@ -297,18 +305,27 @@ impl Engine {
     fn group_stop(&mut self) {
         if let Some(group) = &mut self.group {
             group.token = None;
+            group.track = None;
             group.start_at = None;
             self.unload();
             self.shared().status.path = None;
         }
     }
 
-    fn group_load(&mut self, token: u64, path: String, position: f64, start: GroupStart) {
+    fn group_load(
+        &mut self,
+        token: u64,
+        path: String,
+        position: f64,
+        start: GroupStart,
+        track: PlayedTrack,
+    ) {
         let Some(group) = &mut self.group else { return };
         group.start_at = None;
         let reuse = group.token == Some(token) && self.player.is_some();
         if !reuse {
             group.token = None;
+            group.track = None;
             match open_track(&path) {
                 Ok((source, duration)) => {
                     // Paused before appending, so not a single sample plays early.
@@ -319,6 +336,7 @@ impl Engine {
                     player.append(source);
                     self.player = Some(player);
                     group.token = Some(token);
+                    group.track = Some(track);
                     s.status.track_id = None;
                     s.status.path = Some(path);
                     s.status.duration = duration;

@@ -17,6 +17,7 @@ use tauri_specta::Event;
 use crate::audio::{QueueItem, RandomPicker};
 use crate::db::{Db, now_secs};
 use crate::error::{AppError, AppResult};
+use crate::history::PlaySource;
 
 pub type TrackId = i64;
 
@@ -98,7 +99,7 @@ impl Library {
     }
 
     /// Resolves ids to queue items, in order (error if one is unknown).
-    pub fn queue_items(&self, ids: &[TrackId]) -> AppResult<Vec<QueueItem>> {
+    pub fn queue_items(&self, ids: &[TrackId], source: PlaySource) -> AppResult<Vec<QueueItem>> {
         let conn = self.db.conn();
         let mut stmt = conn.prepare("SELECT path FROM tracks WHERE id = ?1")?;
         ids.iter()
@@ -107,7 +108,11 @@ impl Library {
                     .query_row([track_id], |row| row.get(0))
                     .optional()?
                     .ok_or_else(|| AppError::not_found(GONE))?;
-                Ok(QueueItem { track_id, path })
+                Ok(QueueItem {
+                    track_id,
+                    path,
+                    source,
+                })
             })
             .collect()
     }
@@ -192,6 +197,7 @@ impl Library {
                         Ok(QueueItem {
                             track_id: row.get(0)?,
                             path: row.get(1)?,
+                            source: PlaySource::Autoplay,
                         })
                     },
                 )
@@ -365,13 +371,13 @@ pub(crate) mod tests {
         let lib = Library::new(Db::in_memory(), None);
         let a = insert_track(&lib, "/a.mp3");
         let b = insert_track(&lib, "/b.mp3");
-        let items = lib.queue_items(&[b, a]).unwrap();
+        let items = lib.queue_items(&[b, a], PlaySource::Library).unwrap();
         assert_eq!(items[0].path, "/b.mp3");
         assert_eq!(items[1].track_id, a);
 
         assert_eq!(lib.remove(a).unwrap().path, "/a.mp3");
         assert!(lib.get(a).is_err());
-        assert!(lib.queue_items(&[a]).is_err());
+        assert!(lib.queue_items(&[a], PlaySource::Library).is_err());
         assert!(lib.remove(a).is_err());
     }
 
