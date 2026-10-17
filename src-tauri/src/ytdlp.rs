@@ -26,6 +26,25 @@ pub fn video_url(youtube_id: &str) -> AppResult<String> {
     Ok(format!("https://music.youtube.com/watch?v={youtube_id}"))
 }
 
+/// `https://www.youtube.com/playlist?list=<id>`, only for a valid playlist id.
+pub fn playlist_url(playlist_id: &str) -> AppResult<String> {
+    let valid = (2..=64).contains(&playlist_id.len())
+        && playlist_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if !valid {
+        return Err(AppError::invalid("Identifiant de playlist invalide"));
+    }
+    Ok(format!(
+        "https://www.youtube.com/playlist?list={playlist_id}"
+    ))
+}
+
+/// Browsers yt-dlp can read cookies from (`--cookies-from-browser`).
+pub const COOKIE_BROWSERS: &[&str] = &[
+    "brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale",
+];
+
 /// Runs yt-dlp and parses every stdout line that is a JSON `T` (others are skipped).
 pub async fn run_json<T: DeserializeOwned>(args: &[&str]) -> AppResult<Vec<T>> {
     let output = command(args)
@@ -191,6 +210,12 @@ mod tests {
         );
         assert!(video_url("d7woYjGWs6k&list=x").is_err());
         assert!(video_url("https://evil.example").is_err());
+        assert_eq!(
+            playlist_url("PLabc_-1").unwrap(),
+            "https://www.youtube.com/playlist?list=PLabc_-1"
+        );
+        assert!(playlist_url("PL&x=1").is_err());
+        assert!(playlist_url("").is_err());
     }
 
     #[test]

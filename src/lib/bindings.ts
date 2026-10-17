@@ -74,6 +74,13 @@ export const commands = {
 	groupSkip: () => __TAURI_INVOKE<null>("group_skip"),
 	/**  Most recent listens first. */
 	getRecentPlays: (limit: number) => __TAURI_INVOKE<Play[]>("get_recent_plays", { limit }),
+	getSyncSettings: () => __TAURI_INVOKE<SyncSettings>("get_sync_settings"),
+	setYtmusicBrowser: (browser: string) => __TAURI_INVOKE<SyncSettings>("set_ytmusic_browser", { browser }),
+	/**
+	 *  Imports the YouTube Music liked songs and playlists; progress comes as
+	 *  `SyncProgress` events.
+	 */
+	syncYoutubeMusic: () => __TAURI_INVOKE<SyncReport>("sync_youtube_music"),
 };
 
 /** Events */
@@ -86,6 +93,7 @@ export const events = {
 	playlistsChanged: makeEvent<PlaylistsChanged>("playlists-changed"),
 	queueChanged: makeEvent<QueueChanged>("queue-changed"),
 	searchDetails: makeEvent<SearchDetails>("search-details"),
+	syncProgress: makeEvent<SyncProgress>("sync-progress"),
 };
 
 /* Types */
@@ -289,6 +297,33 @@ export type SearchResult = {
 	views: number | null,
 	/**  True while artist/album/duration are still being fetched (YouTube Music). */
 	details_pending: boolean,
+};
+
+export type SyncProgress = {
+	/**  What is being read ("Titres likés", a playlist name…). */
+	step: string,
+	/**  Playlists done so far, out of `total` (0 while the list isn't known). */
+	done: number,
+	total: number,
+};
+
+export type SyncReport = {
+	playlists: number,
+	/**  Tracks seen in the service (a track in several playlists counts once). */
+	tracks: number,
+	/**  Tracks that were not in the library before. */
+	new_tracks: number,
+	/**  Playlists that could not be read (the others were imported). */
+	errors: string[],
+};
+
+export type SyncSettings = {
+	/**  Browser whose cookies yt-dlp uses for YouTube Music. */
+	ytmusic_browser: string | null,
+	/**  Unix timestamp (seconds) of the last successful YouTube Music sync. */
+	ytmusic_synced_at: number | null,
+	/**  Browsers that can be chosen. */
+	browsers: string[],
 };
 
 export type Track = {
