@@ -13,12 +13,14 @@ use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 use tauri::AppHandle;
 use tauri_specta::Event;
 
+use super::listen::Listen;
 use super::opus::OpusSource;
 use super::{
     GroupEndedCallback, GroupStart, PlayerChanged, PlayerState, QueueChanged, RandomPicker, Shared,
 };
+use crate::db::now_secs;
 use crate::error::{AppError, AppResult};
-use crate::history::PlayedTrack;
+use crate::history::{PlayRecorder, PlaySource, PlayedTrack};
 use crate::library::TrackId;
 
 type TrackSource = Box<dyn Source + Send>;
@@ -57,10 +59,11 @@ pub(super) fn spawn(
     rx: Receiver<AudioCommand>,
     shared: Arc<Mutex<Shared>>,
     pick_random: RandomPicker,
+    record: PlayRecorder,
 ) {
     thread::Builder::new()
         .name("audio".into())
-        .spawn(move || run(app, rx, shared, pick_random))
+        .spawn(move || run(app, rx, shared, pick_random, record))
         .expect("failed to spawn audio thread");
 }
 
@@ -69,6 +72,7 @@ fn run(
     rx: Receiver<AudioCommand>,
     shared: Arc<Mutex<Shared>>,
     pick_random: RandomPicker,
+    record: PlayRecorder,
 ) {
     let opened = DeviceSinkBuilder::from_default_device()
         .map(|b| b.with_error_callback(log_stream_error))
@@ -87,6 +91,8 @@ fn run(
         player: None,
         shared,
         pick_random,
+        record,
+        listen: None,
         group: None,
         app,
         published: PlayerState::default(),
@@ -112,6 +118,8 @@ fn run(
         engine.sync_state();
         engine.publish();
     }
+    // App shutting down: the current listen still counts.
+    engine.finish_listen(false);
 }
 
 fn log_stream_error(err: rodio::cpal::StreamError) {
@@ -150,6 +158,9 @@ struct Engine {
     player: Option<Player>,
     shared: Arc<Mutex<Shared>>,
     pick_random: RandomPicker,
+    record: PlayRecorder,
+    /// Listen of the track loaded in `player`, handed to `record` when it ends.
+    listen: Option<Listen>,
     /// Set while a listening group drives playback.
     group: Option<GroupMode>,
     app: AppHandle,
@@ -168,10 +179,6 @@ struct GroupMode {
     saved_track_id: Option<TrackId>,
     saved_path: Option<String>,
     saved_duration: f64,
-    /// The group track loaded in `player` (always `PlayedTrack::Group`), used to
-    /// record the listen.
-    #[allow(dead_code)] // read by listen recording (next step)
-    track: Option<PlayedTrack>,
 }
 
 impl Engine {
@@ -201,11 +208,13 @@ impl Engine {
                 if let Some(p) = &self.player {
                     p.play();
                 }
+                self.resume_listen();
             }
             AudioCommand::Pause => {
                 if let Some(p) = &self.player {
                     p.pause();
                 }
+                self.pause_listen();
             }
             AudioCommand::Stop => self.unload(),
             AudioCommand::Seek(secs) => {
@@ -280,7 +289,6 @@ impl Engine {
             on_ended,
             token: None,
             start_at: None,
-            track: None,
             saved_track_id: s.status.track_id.take(),
             saved_path: s.status.path.take(),
             saved_duration: std::mem::take(&mut s.status.duration),
@@ -305,7 +313,6 @@ impl Engine {
     fn group_stop(&mut self) {
         if let Some(group) = &mut self.group {
             group.token = None;
-            group.track = None;
             group.start_at = None;
             self.unload();
             self.shared().status.path = None;
@@ -325,7 +332,8 @@ impl Engine {
         let reuse = group.token == Some(token) && self.player.is_some();
         if !reuse {
             group.token = None;
-            group.track = None;
+            // Another entry: the previous listen ends here, even if the file fails.
+            self.finish_listen(false);
             match open_track(&path) {
                 Ok((source, duration)) => {
                     // Paused before appending, so not a single sample plays early.
@@ -335,8 +343,10 @@ impl Engine {
                     player.set_volume(s.status.volume);
                     player.append(source);
                     self.player = Some(player);
-                    group.token = Some(token);
-                    group.track = Some(track);
+                    self.listen = Some(Listen::new(track, PlaySource::Group, now_secs(), duration));
+                    if let Some(group) = &mut self.group {
+                        group.token = Some(token);
+                    }
                     s.status.track_id = None;
                     s.status.path = Some(path);
                     s.status.duration = duration;
@@ -354,6 +364,7 @@ impl Engine {
         }
         let Some(player) = &self.player else { return };
         player.pause();
+        self.pause_listen();
         match start {
             GroupStart::Paused => {
                 self.group_seek(position);
@@ -374,6 +385,7 @@ impl Engine {
                         && let Some(p) = &self.player
                     {
                         p.play();
+                        self.resume_listen();
                     }
                 }
             }
@@ -414,6 +426,7 @@ impl Engine {
             if let Some(p) = &self.player {
                 p.play();
             }
+            self.resume_listen();
         }
     }
 
@@ -422,6 +435,7 @@ impl Engine {
         let token = group.token.take();
         group.start_at = None;
         let on_ended = Arc::clone(&group.on_ended);
+        self.finish_listen(true);
         self.unload();
         if let Some(token) = token {
             on_ended(token);
@@ -437,6 +451,16 @@ impl Engine {
             };
             match open_track(&item.path) {
                 Ok((source, duration)) => {
+                    // Only now: a file that fails to open must not end the current listen.
+                    self.finish_listen(false);
+                    let mut listen = Listen::new(
+                        PlayedTrack::Library(item.track_id),
+                        item.source,
+                        now_secs(),
+                        duration,
+                    );
+                    listen.resume(Instant::now());
+                    self.listen = Some(listen);
                     // A fresh Player per track resets the position counter.
                     let player = Player::connect_new(self.device.mixer());
                     let mut s = self.shared.lock().unwrap();
@@ -466,11 +490,32 @@ impl Engine {
     }
 
     fn unload(&mut self) {
+        self.finish_listen(false);
         self.player = None;
         let mut s = self.shared();
         s.status.playing = false;
         s.status.loaded = false;
         s.status.position = 0.0;
+    }
+
+    /// Hands the current listen over to the history (never with `shared` locked:
+    /// the recorder writes to the database).
+    fn finish_listen(&mut self, completed: bool) {
+        if let Some(listen) = self.listen.take() {
+            (self.record)(listen.finish(Instant::now(), completed));
+        }
+    }
+
+    fn resume_listen(&mut self) {
+        if let Some(listen) = &mut self.listen {
+            listen.resume(Instant::now());
+        }
+    }
+
+    fn pause_listen(&mut self) {
+        if let Some(listen) = &mut self.listen {
+            listen.pause(Instant::now());
+        }
     }
 
     fn sync_state(&mut self) {
@@ -480,6 +525,8 @@ impl Engine {
             self.group_track_ended();
         } else if p.empty() {
             // End of track: advance through the queue, or pick a random library track.
+            // Repeat-one replays start a new listen.
+            self.finish_listen(true);
             let next = {
                 let mut s = self.shared.lock().unwrap();
                 match s.next_index(true) {

@@ -14,6 +14,7 @@
 
 pub mod commands;
 mod engine;
+mod listen;
 mod opus;
 mod queue;
 
@@ -26,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
-use crate::history::{PlaySource, PlayedTrack};
+use crate::history::{PlayRecorder, PlaySource, PlayedTrack};
 use crate::library::TrackId;
 use engine::AudioCommand;
 use queue::Queue;
@@ -167,11 +168,18 @@ pub struct AudioHandle {
 }
 
 impl AudioHandle {
-    /// Spawns the audio thread. `app` is used to emit [`PlayerChanged`] / [`QueueChanged`].
-    pub fn spawn(app: AppHandle, pick_random: RandomPicker) -> Self {
+    /// Spawns the audio thread. `app` is used to emit [`PlayerChanged`] / [`QueueChanged`];
+    /// every listen is handed to `record` when it ends.
+    pub fn spawn(app: AppHandle, pick_random: RandomPicker, record: PlayRecorder) -> Self {
         let (tx, rx) = mpsc::channel();
         let shared = Arc::new(Mutex::new(Shared::new()));
-        engine::spawn(app, rx, Arc::clone(&shared), Arc::clone(&pick_random));
+        engine::spawn(
+            app,
+            rx,
+            Arc::clone(&shared),
+            Arc::clone(&pick_random),
+            record,
+        );
         Self {
             tx,
             shared,
