@@ -6,6 +6,7 @@ import {
   type PlaySource,
   type RepeatMode,
   type QueueState,
+  type Track,
 } from "#lib/bindings.ts";
 import { attempt, toasts } from "#lib/stores/toasts.svelte.ts";
 
@@ -46,8 +47,19 @@ class Player {
   }
 
   /** Replaces the queue with `trackIds` and plays `trackIds[start]`. */
-  playFrom(trackIds: number[], start: number, source: PlaySource) {
-    return attempt(() => commands.playQueue(trackIds, start, source));
+  /** Plays `tracks` from `tracks[start]`. Tracks that can't be played yet (no file
+   * and no YouTube video to download) are left out; the start one is always sent,
+   * so the backend explains why it can't play. */
+  playFrom(tracks: Track[], start: number, source: PlaySource) {
+    const first = tracks[start];
+    const list = tracks.filter((t) => t === first || t.path !== null || t.youtube_id !== null);
+    return attempt(() =>
+      commands.playQueue(
+        list.map((t) => t.id),
+        list.indexOf(first),
+        source,
+      ),
+    );
   }
 
   enqueue(trackIds: number[], source: PlaySource) {

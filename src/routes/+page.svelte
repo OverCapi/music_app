@@ -23,6 +23,7 @@
   });
 
   const totalDuration = $derived(library.tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0));
+  const notDownloaded = $derived(library.tracks.filter((t) => t.path === null).length);
 
   async function addFiles() {
     const paths = await attempt(() =>
@@ -33,16 +34,12 @@
 
   /** Plays the visible list (like a Spotify playlist), starting at `index`. */
   function playFrom(index: number) {
-    player.playFrom(
-      filtered.map((t) => t.id),
-      index,
-      "library",
-    );
+    player.playFrom(filtered, index, "library");
   }
 
   // Only files in the app's music folder (downloads) are deleted; the backend checks.
   function removeLabel(track: Track): string {
-    return track.youtube_id
+    return track.youtube_id && track.path
       ? "Supprimer (le fichier est mis à la corbeille)"
       : "Retirer de la bibliothèque";
   }
@@ -58,7 +55,8 @@
     kind="Bibliothèque"
     name="Bibliothèque"
     meta={plural(library.tracks.length, "titre") +
-      (library.tracks.length > 0 ? ` · ${formatTotal(totalDuration)}` : "")}
+      (library.tracks.length > 0 ? ` · ${formatTotal(totalDuration)}` : "") +
+      (notDownloaded > 0 ? ` · ${notDownloaded} à télécharger à l'écoute` : "")}
     icon="library"
     playLabel="Lire la bibliothèque"
     playDisabled={filtered.length === 0}
