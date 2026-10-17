@@ -11,6 +11,7 @@
     { href: resolve("/"), label: "Bibliothèque", icon: "library" },
     { href: resolve("/search"), label: "Rechercher", icon: "search" },
     { href: resolve("/group"), label: "Groupe d'écoute", icon: "group" },
+    { href: resolve("/sync"), label: "Synchronisation", icon: "sync" },
   ] as const;
 
   let creating = $state(false);

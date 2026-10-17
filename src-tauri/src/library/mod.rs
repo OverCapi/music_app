@@ -45,7 +45,6 @@ pub struct Track {
 }
 
 /// A track known from another service, not downloaded yet.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the service imports"))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RemoteTrack {
     pub title: String,
@@ -212,7 +211,6 @@ impl Library {
     /// library track when it is the same song: same YouTube id, else same
     /// [`match_key`] and a close duration (a matched track without YouTube id gets
     /// this one). Returns the track id of each entry, in order.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the service imports"))]
     pub fn add_remote(&self, tracks: &[RemoteTrack]) -> AppResult<Vec<TrackId>> {
         let mut ids = Vec::with_capacity(tracks.len());
         let mut added = false;
@@ -268,7 +266,6 @@ impl Library {
     }
 
     /// Library tracks with the same [`match_key`] and a close duration.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the service imports"))]
     pub fn find_similar(
         &self,
         artist: Option<&str>,

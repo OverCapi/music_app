@@ -140,6 +140,28 @@ impl Playlists {
         self.changed()
     }
 
+    /// Replaces the content of a playlist (duplicates keep their first position).
+    pub fn set_tracks(&self, id: PlaylistId, track_ids: &[TrackId]) -> AppResult<()> {
+        {
+            let mut conn = self.db.conn();
+            let tx = conn.transaction()?;
+            ensure_exists(&tx, id)?;
+            tx.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?1", [id])?;
+            {
+                let mut insert = tx.prepare(
+                    "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position)
+                     VALUES (?1, ?2, ?3)",
+                )?;
+                let mut position: i64 = 0;
+                for track_id in track_ids {
+                    position += insert.execute(params![id, track_id, position])? as i64;
+                }
+            }
+            tx.commit()?;
+        }
+        self.changed()
+    }
+
     pub fn remove_track(&self, id: PlaylistId, track_id: TrackId) -> AppResult<()> {
         {
             let conn = self.db.conn();
@@ -212,6 +234,17 @@ mod tests {
         assert!(pl.create("   ").is_err());
         assert!(pl.create(&"x".repeat(101)).is_err());
         assert!(pl.create(&"é".repeat(100)).is_ok());
+    }
+
+    #[test]
+    fn set_tracks_replaces_the_content() {
+        let (lib, pl) = setup();
+        let [a, b, c] = ["/a", "/b", "/c"].map(|p| insert_track(&lib, p));
+        let p = pl.create("P").unwrap();
+        pl.add_tracks(p.id, &[a, b]).unwrap();
+        pl.set_tracks(p.id, &[c, a, c]).unwrap();
+        assert_eq!(pl.all().unwrap()[0].track_ids, [c, a]);
+        assert!(pl.set_tracks(p.id + 1, &[a]).is_err());
     }
 
     #[test]

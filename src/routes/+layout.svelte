@@ -8,6 +8,7 @@
   import { downloads } from "#lib/stores/downloads.svelte.ts";
   import { account } from "#lib/stores/account.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
+  import { sync } from "#lib/stores/sync.svelte.ts";
   import { errorMessage, toasts } from "#lib/stores/toasts.svelte.ts";
   import Sidebar from "#lib/components/Sidebar.svelte";
   import PlayerBar from "#lib/components/player/PlayerBar.svelte";
@@ -21,7 +22,7 @@
   onMount(() => {
     account.refresh();
     // Each store subscribes to its events before loading its initial state.
-    const unlisteners = [player, library, playlists, search, downloads, group].map((store) =>
+    const unlisteners = [player, library, playlists, search, downloads, group, sync].map((store) =>
       store.init().catch((e) => {
         toasts.push(errorMessage(e));
         return () => {};

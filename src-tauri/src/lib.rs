@@ -15,6 +15,7 @@ mod history;
 mod library;
 mod playlists;
 mod search;
+mod sync;
 mod ytdlp;
 
 use std::path::PathBuf;
@@ -32,6 +33,7 @@ use history::History;
 use library::Library;
 use playlists::Playlists;
 use search::Search;
+use sync::LibrarySync;
 
 const BINDINGS_PATH: &str = "../src/lib/bindings.ts";
 
@@ -86,6 +88,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             group::commands::group_seek,
             group::commands::group_skip,
             history::commands::get_recent_plays,
+            sync::commands::get_sync_settings,
+            sync::commands::set_ytmusic_browser,
+            sync::commands::sync_youtube_music,
         ])
         .events(collect_events![
             audio::PlayerChanged,
@@ -96,6 +101,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             downloads::DownloadProgress,
             group::GroupChanged,
             group::GroupError,
+            sync::SyncProgress,
         ])
         .typ::<error::AppError>()
 }
@@ -200,7 +206,14 @@ pub fn run() {
                 track_fetcher(handle.clone()),
             ));
             app.manage(history);
-            app.manage(Playlists::new(db.clone(), Some(handle.clone())));
+            let playlists = Playlists::new(db.clone(), Some(handle.clone()));
+            app.manage(LibrarySync::new(
+                db.clone(),
+                library.clone(),
+                playlists.clone(),
+                Some(handle.clone()),
+            ));
+            app.manage(playlists);
             app.manage(AccountStore::new(db));
             app.manage(GroupClient::new(handle, cache_dir.join("groups")));
             let music_dir = app
