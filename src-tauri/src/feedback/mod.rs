@@ -220,22 +220,18 @@ impl Feedback {
         Ok(FeedbackState { tracks, artists })
     }
 
-    #[allow(dead_code)] // used by the recommendation scoring (later step)
     pub fn disliked_youtube_ids(&self) -> AppResult<HashSet<String>> {
         self.keys("youtube_id", FeedbackKind::Dislike)
     }
 
-    #[allow(dead_code)] // used by the recommendation scoring (later step)
     pub fn disliked_artists(&self) -> AppResult<HashSet<String>> {
         self.keys("artist", FeedbackKind::Dislike)
     }
 
-    #[allow(dead_code)] // used by the recommendation scoring (later step)
     pub fn liked_youtube_ids(&self) -> AppResult<HashSet<String>> {
         self.keys("youtube_id", FeedbackKind::Like)
     }
 
-    #[allow(dead_code)] // used by the recommendation scoring (later step)
     pub fn liked_artists(&self) -> AppResult<HashSet<String>> {
         self.keys("artist", FeedbackKind::Like)
     }

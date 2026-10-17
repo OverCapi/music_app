@@ -14,6 +14,7 @@ mod feedback;
 mod group;
 mod history;
 mod library;
+mod mixes;
 mod playlists;
 mod radio;
 mod search;
@@ -97,6 +98,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             feedback::commands::clear_feedback,
             taste::commands::get_taste_profile,
             radio::commands::get_radio,
+            mixes::commands::get_mixes,
             sync::commands::get_sync_settings,
             sync::commands::set_ytmusic_browser,
             sync::commands::sync_youtube_music,
@@ -211,14 +213,23 @@ pub fn run() {
             let history = History::new(db.clone());
             let feedback = Feedback::new(db.clone(), Some(handle.clone()));
             app.manage(feedback.clone());
-            app.manage(radio::Radio::new(db.clone()));
+            let radio = radio::Radio::new(db.clone());
+            app.manage(radio.clone());
             app.manage(AudioHandle::spawn(
                 handle.clone(),
                 library.random_picker(),
                 history.recorder(),
                 track_fetcher(handle.clone()),
             ));
-            app.manage(taste::Taste::new(history.clone(), feedback));
+            let taste = taste::Taste::new(history.clone(), feedback.clone());
+            app.manage(mixes::Mixes::new(
+                taste.clone(),
+                radio,
+                library.clone(),
+                feedback,
+                history.clone(),
+            ));
+            app.manage(taste);
             app.manage(history);
             let playlists = Playlists::new(db.clone(), Some(handle.clone()));
             app.manage(LibrarySync::new(
