@@ -5,6 +5,8 @@
 //! The audio engine hands a [`FinishedPlay`] over through a [`PlayRecorder`] when a
 //! listen ends.
 
+pub mod commands;
+
 use std::sync::Arc;
 
 use rusqlite::{Row, params};

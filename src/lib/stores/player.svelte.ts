@@ -3,6 +3,7 @@ import {
   commands,
   events,
   type PlayerState,
+  type PlaySource,
   type RepeatMode,
   type QueueState,
 } from "#lib/bindings.ts";
@@ -44,12 +45,12 @@ class Player {
   }
 
   /** Replaces the queue with `trackIds` and plays `trackIds[start]`. */
-  playFrom(trackIds: number[], start: number) {
-    return attempt(() => commands.playQueue(trackIds, start));
+  playFrom(trackIds: number[], start: number, source: PlaySource) {
+    return attempt(() => commands.playQueue(trackIds, start, source));
   }
 
-  enqueue(trackIds: number[]) {
-    return attempt(() => commands.enqueue(trackIds));
+  enqueue(trackIds: number[], source: PlaySource) {
+    return attempt(() => commands.enqueue(trackIds, source));
   }
 
   playIndex(index: number) {

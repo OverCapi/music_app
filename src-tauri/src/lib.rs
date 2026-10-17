@@ -11,8 +11,6 @@ mod db;
 mod downloads;
 mod error;
 mod group;
-// used by the audio engine in a follow-up
-#[allow(dead_code)]
 mod history;
 mod library;
 mod playlists;
@@ -30,6 +28,7 @@ use audio::AudioHandle;
 use db::Db;
 use downloads::Downloads;
 use group::GroupClient;
+use history::History;
 use library::Library;
 use playlists::Playlists;
 use search::Search;
@@ -86,6 +85,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             group::commands::group_pause,
             group::commands::group_seek,
             group::commands::group_skip,
+            history::commands::get_recent_plays,
         ])
         .events(collect_events![
             audio::PlayerChanged,
@@ -175,7 +175,13 @@ pub fn run() {
 
             let db = Db::open(&data_dir.join("music.db"), &data_dir)?;
             let library = Library::new(db.clone(), Some(handle.clone()));
-            app.manage(AudioHandle::spawn(handle.clone(), library.random_picker()));
+            let history = History::new(db.clone());
+            app.manage(AudioHandle::spawn(
+                handle.clone(),
+                library.random_picker(),
+                history.recorder(),
+            ));
+            app.manage(history);
             app.manage(Playlists::new(db.clone(), Some(handle.clone())));
             app.manage(AccountStore::new(db));
             app.manage(GroupClient::new(handle, cache_dir.join("groups")));

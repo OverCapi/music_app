@@ -36,6 +36,7 @@
     player.playFrom(
       filtered.map((t) => t.id),
       index,
+      "library",
     );
   }
 
@@ -98,7 +99,7 @@
               }}
             />
           {/if}
-          <EnqueueButton trackId={track.id} />
+          <EnqueueButton trackId={track.id} source="library" />
           <AddToPlaylist trackId={track.id} />
           <button
             class="row-action"

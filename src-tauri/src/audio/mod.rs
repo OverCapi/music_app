@@ -14,6 +14,7 @@
 
 pub mod commands;
 mod engine;
+mod listen;
 mod opus;
 mod queue;
 
@@ -26,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
+use crate::history::{PlayRecorder, PlaySource, PlayedTrack};
 use crate::library::TrackId;
 use engine::AudioCommand;
 use queue::Queue;
@@ -33,11 +35,12 @@ use queue::Queue;
 /// "Previous" restarts the current track instead when we're past this point.
 const RESTART_THRESHOLD_SECS: f64 = 3.0;
 
-/// One queue entry: the library track and its resolved path.
+/// One queue entry: the library track, its resolved path and where it came from.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct QueueItem {
     pub track_id: TrackId,
     pub path: String,
+    pub source: PlaySource,
 }
 
 /// Picks a random library track, avoiding the given one when possible.
@@ -165,11 +168,18 @@ pub struct AudioHandle {
 }
 
 impl AudioHandle {
-    /// Spawns the audio thread. `app` is used to emit [`PlayerChanged`] / [`QueueChanged`].
-    pub fn spawn(app: AppHandle, pick_random: RandomPicker) -> Self {
+    /// Spawns the audio thread. `app` is used to emit [`PlayerChanged`] / [`QueueChanged`];
+    /// every listen is handed to `record` when it ends.
+    pub fn spawn(app: AppHandle, pick_random: RandomPicker, record: PlayRecorder) -> Self {
         let (tx, rx) = mpsc::channel();
         let shared = Arc::new(Mutex::new(Shared::new()));
-        engine::spawn(app, rx, Arc::clone(&shared), Arc::clone(&pick_random));
+        engine::spawn(
+            app,
+            rx,
+            Arc::clone(&shared),
+            Arc::clone(&pick_random),
+            record,
+        );
         Self {
             tx,
             shared,
@@ -327,17 +337,20 @@ impl AudioHandle {
     }
 
     /// Loads `path` (unless `token` is already loaded), seeks to `position` and
-    /// starts as `start` says. `token` identifies the group entry.
+    /// starts as `start` says. `token` identifies the group entry; `track` (the
+    /// `PlayedTrack::Group` variant) describes it for the listening history.
     pub fn group_load(
         &self,
         token: u64,
         path: String,
         position: f64,
         start: GroupStart,
+        track: PlayedTrack,
     ) -> AppResult<()> {
         self.send(AudioCommand::GroupLoad {
             token,
             path,
+            track,
             position: clamp_position(position),
             start,
         })

@@ -141,11 +141,13 @@ impl Queue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::PlaySource;
 
     fn item(id: TrackId) -> QueueItem {
         QueueItem {
             track_id: id,
             path: format!("/music/{id}.mp3"),
+            source: PlaySource::Library,
         }
     }
 

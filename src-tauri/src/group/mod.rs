@@ -37,6 +37,7 @@ use crate::account::{Session, websocket_url};
 use crate::audio::{AudioHandle, GroupEndedCallback, GroupStart};
 use crate::downloads::{self, DownloadStatus};
 use crate::error::{AppError, AppResult};
+use crate::history::PlayedTrack;
 use crate::library::Library;
 use clock::Clock;
 use connection::Outgoing;
@@ -490,6 +491,18 @@ impl Inner {
         let Some(target) = actions.target.filter(|_| m.in_audio_group) else {
             return;
         };
+        // Play/Pause targets always come from a current entry.
+        let Some(track) = reconcile::current_entry(state).map(|e| PlayedTrack::Group {
+            youtube_id: e.youtube_id.clone(),
+            title: e.title.clone(),
+            artist: e.artist.clone(),
+        }) else {
+            if let Err(e) = self.audio().group_stop() {
+                tracing::warn!("group: audio command failed: {e}");
+            }
+            m.applied = Some(target);
+            return;
+        };
         let audio = self.audio();
         let path = |p: &PathBuf| p.to_string_lossy().into_owned();
         let result = match &target {
@@ -504,12 +517,13 @@ impl Inner {
                 path(file),
                 *position,
                 GroupStart::At(m.clock.to_instant(*at_ms)),
+                track,
             ),
             Target::Pause {
                 entry_id,
                 path: file,
                 position,
-            } => audio.group_load(*entry_id, path(file), *position, GroupStart::Paused),
+            } => audio.group_load(*entry_id, path(file), *position, GroupStart::Paused, track),
         };
         if let Err(e) = result {
             tracing::warn!("group: audio command failed: {e}");
