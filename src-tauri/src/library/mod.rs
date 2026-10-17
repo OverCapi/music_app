@@ -1,15 +1,22 @@
 //! Music library: every track the user has added (table `tracks`).
-//! Downloaded tracks carry their `youtube_id`.
+//! Downloaded tracks carry their `youtube_id`. Tracks imported from another service
+//! can be in the library before their file is downloaded (`path` is `None`).
+//!
+//! A YouTube id identifies at most one track, and [`match_key`] (normalized artist
+//! and title) recognizes the same song coming from elsewhere, so imports from
+//! several services don't create duplicates.
 //!
 //! Every change emits [`LibraryChanged`] with the full list.
 
 pub mod commands;
+mod match_key;
 
 use std::path::Path;
 use std::sync::Arc;
 
+use group_protocol::is_valid_youtube_id;
 use lofty::prelude::*;
-use rusqlite::{OptionalExtension, Row, params};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 use tauri::AppHandle;
 use tauri_specta::Event;
@@ -24,8 +31,8 @@ pub type TrackId = i64;
 #[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
 pub struct Track {
     pub id: TrackId,
-    /// Absolute path (unique).
-    pub path: String,
+    /// Absolute path (unique); `None` until the file is downloaded.
+    pub path: Option<String>,
     pub title: String,
     pub artist: Option<String>,
     pub album: Option<String>,
@@ -34,6 +41,19 @@ pub struct Track {
     /// Unix timestamp (seconds).
     pub added_at: i64,
     /// Set for tracks downloaded from YouTube / YouTube Music.
+    pub youtube_id: Option<String>,
+}
+
+/// A track known from another service, not downloaded yet.
+#[cfg_attr(not(test), expect(dead_code, reason = "used by the service imports"))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RemoteTrack {
+    pub title: String,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    /// Seconds (0 when unknown).
+    pub duration: f64,
+    /// When already known (YouTube Music), else found later by matching.
     pub youtube_id: Option<String>,
 }
 
@@ -51,6 +71,7 @@ pub struct Library {
 
 const COLUMNS: &str = "id, path, title, artist, album, duration, added_at, youtube_id";
 const GONE: &str = "Ce titre n'est plus dans la bibliothèque";
+const NOT_DOWNLOADED: &str = "Ce titre n'est pas encore téléchargé";
 
 impl Library {
     /// `app` is `None` in tests (no events emitted).
@@ -84,7 +105,9 @@ impl Library {
 
     /// Embedded cover art (bytes, MIME type), if the file has one.
     pub fn cover(&self, id: TrackId) -> AppResult<Option<(Vec<u8>, String)>> {
-        let path = self.get(id)?.path;
+        let Some(path) = self.get(id)?.path else {
+            return Ok(None);
+        };
         let tagged = lofty::read_from_path(path).map_err(|e| AppError::Internal(e.to_string()))?;
         let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
         let pictures = tag.map(|t| t.pictures()).unwrap_or_default();
@@ -98,16 +121,18 @@ impl Library {
         }))
     }
 
-    /// Resolves ids to queue items, in order (error if one is unknown).
+    /// Resolves ids to queue items, in order (error if one is unknown or not
+    /// downloaded yet).
     pub fn queue_items(&self, ids: &[TrackId], source: PlaySource) -> AppResult<Vec<QueueItem>> {
         let conn = self.db.conn();
         let mut stmt = conn.prepare("SELECT path FROM tracks WHERE id = ?1")?;
         ids.iter()
             .map(|&track_id| {
-                let path = stmt
+                let path: Option<String> = stmt
                     .query_row([track_id], |row| row.get(0))
                     .optional()?
                     .ok_or_else(|| AppError::not_found(GONE))?;
+                let path = path.ok_or_else(|| AppError::invalid(NOT_DOWNLOADED))?;
                 Ok(QueueItem {
                     track_id,
                     path,
@@ -152,13 +177,116 @@ impl Library {
         }
     }
 
-    /// Adds (or updates) a file downloaded from YouTube.
+    /// Adds a file downloaded from YouTube. A track that already has this YouTube id
+    /// (not downloaded yet, or whose file is gone) gets the file and keeps its id,
+    /// title, artist and album.
     pub fn add_downloaded(&self, path: &str, youtube_id: &str) -> AppResult<Track> {
         let mut track = read_track(Path::new(path)).map_err(AppError::invalid)?;
-        track.youtube_id = Some(youtube_id.to_owned());
-        let track = self.insert(track)?;
+        let updated = self
+            .db
+            .conn()
+            .query_row(
+                &format!(
+                    "UPDATE tracks SET path = ?1, duration = ?2 WHERE youtube_id = ?3
+                     RETURNING {COLUMNS}"
+                ),
+                params![path, track.duration, youtube_id],
+                track_from_row,
+            )
+            .optional()?;
+        let track = match updated {
+            Some(track) => track,
+            None => {
+                track.youtube_id = Some(youtube_id.to_owned());
+                self.insert(track)?
+            }
+        };
         self.changed()?;
         Ok(track)
+    }
+
+    /// Adds tracks from another service without downloading them, reusing the
+    /// library track when it is the same song: same YouTube id, else same
+    /// [`match_key`] and a close duration (a matched track without YouTube id gets
+    /// this one). Returns the track id of each entry, in order.
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by the service imports"))]
+    pub fn add_remote(&self, tracks: &[RemoteTrack]) -> AppResult<Vec<TrackId>> {
+        let mut ids = Vec::with_capacity(tracks.len());
+        let mut added = false;
+        for t in tracks {
+            if let Some(youtube_id) = &t.youtube_id
+                && !is_valid_youtube_id(youtube_id)
+            {
+                return Err(AppError::invalid("Identifiant YouTube invalide"));
+            }
+            let existing = match &t.youtube_id {
+                Some(youtube_id) => self.find_by_youtube_id(youtube_id)?,
+                None => None,
+            };
+            let existing = match existing {
+                Some(track) => Some(track),
+                None => self
+                    .find_similar(t.artist.as_deref(), &t.title, t.duration)?
+                    .into_iter()
+                    .find(|track| track.youtube_id.is_none() || t.youtube_id.is_none()),
+            };
+            let id = match existing {
+                Some(track) => {
+                    if track.youtube_id.is_none() && t.youtube_id.is_some() {
+                        self.db.conn().execute(
+                            "UPDATE tracks SET youtube_id = ?1 WHERE id = ?2",
+                            params![t.youtube_id, track.id],
+                        )?;
+                        added = true;
+                    }
+                    track.id
+                }
+                None => {
+                    added = true;
+                    self.insert(Track {
+                        id: 0,
+                        path: None,
+                        title: t.title.clone(),
+                        artist: t.artist.clone(),
+                        album: t.album.clone(),
+                        duration: t.duration,
+                        added_at: now_secs(),
+                        youtube_id: t.youtube_id.clone(),
+                    })?
+                    .id
+                }
+            };
+            ids.push(id);
+        }
+        if added {
+            self.changed()?;
+        }
+        Ok(ids)
+    }
+
+    /// Library tracks with the same [`match_key`] and a close duration.
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by the service imports"))]
+    pub fn find_similar(
+        &self,
+        artist: Option<&str>,
+        title: &str,
+        duration: f64,
+    ) -> AppResult<Vec<Track>> {
+        let Some(key) = match_key::match_key(artist, title) else {
+            return Ok(Vec::new());
+        };
+        let conn = self.db.conn();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM tracks WHERE match_key = ?1 ORDER BY id"
+        ))?;
+        let tracks = stmt
+            .query_map([key], track_from_row)?
+            .filter(|t| {
+                t.as_ref()
+                    .map_or(true, |t| match_key::same_duration(t.duration, duration))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(tracks)
     }
 
     pub fn find_by_youtube_id(&self, youtube_id: &str) -> AppResult<Option<Track>> {
@@ -191,7 +319,8 @@ impl Library {
             // `id IS ?1` sorts the avoided track last, so it is only picked when alone.
             db.conn()
                 .query_row(
-                    "SELECT id, path FROM tracks ORDER BY id IS ?1, random() LIMIT 1",
+                    "SELECT id, path FROM tracks WHERE path IS NOT NULL
+                     ORDER BY id IS ?1, random() LIMIT 1",
                     [avoid],
                     |row| {
                         Ok(QueueItem {
@@ -213,12 +342,13 @@ impl Library {
     fn insert(&self, t: Track) -> AppResult<Track> {
         Ok(self.db.conn().query_row(
             &format!(
-                "INSERT INTO tracks (path, title, artist, album, duration, added_at, youtube_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "INSERT INTO tracks (path, title, artist, album, duration, added_at,
+                     youtube_id, match_key)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT (path) DO UPDATE SET title = excluded.title,
                      artist = excluded.artist, album = excluded.album,
                      duration = excluded.duration, added_at = excluded.added_at,
-                     youtube_id = excluded.youtube_id
+                     youtube_id = excluded.youtube_id, match_key = excluded.match_key
                  RETURNING {COLUMNS}"
             ),
             params![
@@ -228,7 +358,8 @@ impl Library {
                 t.album,
                 t.duration,
                 t.added_at,
-                t.youtube_id
+                t.youtube_id,
+                match_key::match_key(t.artist.as_deref(), &t.title)
             ],
             track_from_row,
         )?)
@@ -244,6 +375,29 @@ impl Library {
         }
         Ok(())
     }
+}
+
+/// Computes the missing `match_key`s (rows inserted by migrations or the legacy
+/// import, which can't run Rust code).
+pub(crate) fn fill_match_keys(conn: &Connection) -> AppResult<()> {
+    let mut select =
+        conn.prepare("SELECT id, artist, title FROM tracks WHERE match_key IS NULL")?;
+    let rows = select
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, TrackId>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut update = conn.prepare("UPDATE tracks SET match_key = ?1 WHERE id = ?2")?;
+    for (id, artist, title) in rows {
+        // An empty key marks "nothing to match on" so the row isn't retried.
+        let key = match_key::match_key(artist.as_deref(), &title).unwrap_or_default();
+        update.execute(params![key, id])?;
+    }
+    Ok(())
 }
 
 fn track_from_row(row: &Row<'_>) -> rusqlite::Result<Track> {
@@ -272,7 +426,7 @@ fn read_track(path: &Path) -> Result<Track, String> {
         .unwrap_or_default();
     Ok(Track {
         id: 0,
-        path: path.to_string_lossy().into_owned(),
+        path: Some(path.to_string_lossy().into_owned()),
         title: text(tag.and_then(|t| t.title())).unwrap_or(file_stem),
         artist: text(tag.and_then(|t| t.artist())),
         album: text(tag.and_then(|t| t.album())),
@@ -321,7 +475,7 @@ pub(crate) mod tests {
     pub fn insert_track(lib: &Library, path: &str) -> TrackId {
         lib.insert(Track {
             id: 0,
-            path: path.into(),
+            path: Some(path.into()),
             title: path.into(),
             artist: None,
             album: None,
@@ -375,7 +529,7 @@ pub(crate) mod tests {
         assert_eq!(items[0].path, "/b.mp3");
         assert_eq!(items[1].track_id, a);
 
-        assert_eq!(lib.remove(a).unwrap().path, "/a.mp3");
+        assert_eq!(lib.remove(a).unwrap().path.as_deref(), Some("/a.mp3"));
         assert!(lib.get(a).is_err());
         assert!(lib.queue_items(&[a], PlaySource::Library).is_err());
         assert!(lib.remove(a).is_err());
@@ -392,5 +546,111 @@ pub(crate) mod tests {
         for _ in 0..20 {
             assert_eq!(pick(Some(a)).unwrap().track_id, b);
         }
+    }
+
+    fn remote(title: &str, artist: &str, duration: f64, youtube_id: Option<&str>) -> RemoteTrack {
+        RemoteTrack {
+            title: title.into(),
+            artist: Some(artist.into()),
+            album: None,
+            duration,
+            youtube_id: youtube_id.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn add_remote_reuses_the_same_song() {
+        let lib = Library::new(Db::in_memory(), None);
+        let ids = lib
+            .add_remote(&[
+                remote("Get Lucky", "Daft Punk", 248.0, Some("aaaaaaaaaaa")),
+                remote("Get Lucky", "Daft Punk", 248.0, Some("aaaaaaaaaaa")),
+                remote("Other", "Daft Punk", 200.0, None),
+            ])
+            .unwrap();
+        assert_eq!(ids[0], ids[1]);
+        assert_ne!(ids[0], ids[2]);
+        let track = lib.get(ids[0]).unwrap();
+        assert_eq!(track.path, None);
+        assert_eq!(track.youtube_id.as_deref(), Some("aaaaaaaaaaa"));
+
+        // Same song from Spotify (no YouTube id, other spelling): reused.
+        let spotify = lib
+            .add_remote(&[remote(
+                "Get Lucky (feat. Pharrell Williams)",
+                "Daft Punk, Pharrell Williams",
+                250.0,
+                None,
+            )])
+            .unwrap();
+        assert_eq!(spotify, vec![ids[0]]);
+        // A matched track without YouTube id receives it.
+        let found = lib
+            .add_remote(&[remote("Other", "Daft Punk", 201.0, Some("bbbbbbbbbbb"))])
+            .unwrap();
+        assert_eq!(found, vec![ids[2]]);
+        assert_eq!(
+            lib.get(ids[2]).unwrap().youtube_id.as_deref(),
+            Some("bbbbbbbbbbb")
+        );
+        // Very different duration (live version...): a separate track.
+        let live = lib
+            .add_remote(&[remote("Get Lucky", "Daft Punk", 600.0, None)])
+            .unwrap();
+        assert_ne!(live[0], ids[0]);
+        assert_eq!(lib.tracks().unwrap().len(), 3);
+
+        assert!(
+            lib.add_remote(&[remote("X", "Y", 1.0, Some("bad id"))])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn remote_tracks_are_not_playable_until_downloaded() {
+        let dir = temp_dir("remote");
+        let wav = dir.join("Get Lucky.wav");
+        write_wav(&wav);
+        let wav = wav.to_string_lossy().into_owned();
+        let lib = Library::new(Db::in_memory(), None);
+        let id = lib
+            .add_remote(&[remote("Get Lucky", "Daft Punk", 248.0, Some("aaaaaaaaaaa"))])
+            .unwrap()[0];
+
+        assert!(lib.queue_items(&[id], PlaySource::Library).is_err());
+        assert!(lib.random_picker()(None).is_none());
+        assert_eq!(lib.cover(id).unwrap(), None);
+
+        // The download fills the existing track and keeps its metadata.
+        let downloaded = lib.add_downloaded(&wav, "aaaaaaaaaaa").unwrap();
+        assert_eq!(downloaded.id, id);
+        assert_eq!(downloaded.title, "Get Lucky");
+        assert_eq!(downloaded.path.as_deref(), Some(wav.as_str()));
+        assert_eq!(
+            lib.queue_items(&[id], PlaySource::Library).unwrap()[0].path,
+            wav
+        );
+        assert_eq!(lib.tracks().unwrap().len(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn fills_missing_match_keys() {
+        let lib = Library::new(Db::in_memory(), None);
+        lib.db
+            .conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, added_at)
+                 VALUES ('/a.mp3', 'Get Lucky', 'Daft Punk', 1)",
+                [],
+            )
+            .unwrap();
+        fill_match_keys(&lib.db.conn()).unwrap();
+        assert_eq!(
+            lib.find_similar(Some("Daft Punk"), "Get Lucky", 0.0)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }

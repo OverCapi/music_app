@@ -32,7 +32,9 @@ pub async fn remove_track(
     id: TrackId,
 ) -> AppResult<()> {
     let track = library.get(id)?;
-    downloads.trash_if_owned(&track.path)?;
+    if let Some(path) = &track.path {
+        downloads.trash_if_owned(path)?;
+    }
     library.remove(id)?;
     audio.forget_track(id);
     playlists.notify_changed()
