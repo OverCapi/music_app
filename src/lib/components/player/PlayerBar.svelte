@@ -5,6 +5,7 @@
   import { group } from "#lib/stores/group.svelte.ts";
   import { fileName, formatTime } from "#lib/format.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
+  import FeedbackButtons from "#lib/components/player/FeedbackButtons.svelte";
   import Slider from "#lib/components/ui/Slider.svelte";
 
   let { queueOpen = $bindable(false) }: { queueOpen?: boolean } = $props();
@@ -49,6 +50,10 @@
   const position = $derived(
     scrubbing ? scrubValue : Math.min(livePosition, duration || livePosition),
   );
+
+  // Track targeted by the like / "never suggest" buttons.
+  const feedbackTrack = $derived(groupMode ? entry : track);
+  const feedbackArtist = $derived(groupMode ? entry?.artist : track?.artist);
 
   const coverSrc = $derived(
     groupMode
@@ -106,6 +111,7 @@
           <span class="artist">{entry.artist ?? "Artiste inconnu"}</span>
         </div>
       {/if}
+      <FeedbackButtons track={feedbackTrack} artist={feedbackArtist} />
       <span class="badge" title="Lecture synchronisée avec le groupe d'écoute">Groupe</span>
     {:else if s.path || s.loading}
       <div class="cover" aria-hidden="true">
@@ -128,6 +134,7 @@
           >{s.loading ? "Téléchargement…" : (track?.artist ?? "Artiste inconnu")}</span
         >
       </div>
+      <FeedbackButtons track={feedbackTrack} artist={feedbackArtist} />
     {/if}
   </div>
 
