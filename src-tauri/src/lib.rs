@@ -10,6 +10,8 @@ mod audio;
 mod db;
 mod downloads;
 mod error;
+#[allow(dead_code)] // wired in the next step
+mod feedback;
 mod group;
 mod history;
 mod library;
