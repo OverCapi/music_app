@@ -282,8 +282,6 @@ impl Library {
     /// with the same YouTube id (library or suggested). Every entry needs a valid
     /// YouTube id. Returns the track id of each entry, in order. Emits nothing: the
     /// library list does not change.
-    // ponytail: used by the recommendation features (part B).
-    #[allow(dead_code)]
     pub fn add_suggested(&self, tracks: &[RemoteTrack]) -> AppResult<Vec<TrackId>> {
         let mut ids = Vec::with_capacity(tracks.len());
         for t in tracks {
@@ -315,9 +313,18 @@ impl Library {
         Ok(ids)
     }
 
+    /// Points the track at another file (e.g. after moving it out of the suggestion
+    /// cache). Emits nothing: callers [`promote`](Library::promote) right after, or
+    /// the track is hidden anyway.
+    pub fn set_path(&self, id: TrackId, path: &str) -> AppResult<()> {
+        self.db.conn().execute(
+            "UPDATE tracks SET path = ?1 WHERE id = ?2",
+            params![path, id],
+        )?;
+        Ok(())
+    }
+
     /// Whether the track is a hidden suggestion (false for unknown ids).
-    // ponytail: used by the recommendation features (part B).
-    #[allow(dead_code)]
     pub fn is_suggested(&self, id: TrackId) -> AppResult<bool> {
         Ok(self
             .db
@@ -331,8 +338,6 @@ impl Library {
 
     /// Turns a suggested track into a normal library track (the file, if any, is the
     /// caller's business). `None` when no suggested track has this YouTube id.
-    // ponytail: used by the recommendation features (part B).
-    #[allow(dead_code)]
     pub fn promote(&self, youtube_id: &str) -> AppResult<Option<Track>> {
         let track = self
             .db
@@ -353,8 +358,6 @@ impl Library {
     }
 
     /// Every suggested track: (id, YouTube id, cached file path if downloaded).
-    // ponytail: used by the recommendation features (part B).
-    #[allow(dead_code)]
     pub fn suggested_tracks(&self) -> AppResult<Vec<(TrackId, String, Option<String>)>> {
         let conn = self.db.conn();
         let mut stmt = conn.prepare(
@@ -370,8 +373,6 @@ impl Library {
     /// Deletes a suggested row (plays keep their own copy of title and artist;
     /// playlist entries cascade). Does nothing for a library track. Returns whether
     /// a row was removed.
-    // ponytail: used by the recommendation features (part B).
-    #[allow(dead_code)]
     pub fn remove_suggested(&self, id: TrackId) -> AppResult<bool> {
         Ok(self
             .db

@@ -19,6 +19,7 @@ mod mixes;
 mod playlists;
 mod radio;
 mod search;
+mod suggestions;
 mod sync;
 mod taste;
 mod ytdlp;
@@ -51,6 +52,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             audio::commands::play_queue,
             audio::commands::enqueue,
+            suggestions::commands::play_suggestions,
             audio::commands::play_index,
             audio::commands::remove_from_queue,
             audio::commands::clear_queue,
@@ -251,7 +253,12 @@ pub fn run() {
                 .audio_dir()
                 .map(|dir| dir.join("Music App"))
                 .or_else(|_| app.path().app_data_dir().map(|dir| dir.join("music")))?;
-            app.manage(Downloads::new(music_dir));
+            let downloads = Downloads::new(music_dir, cache_dir.join("suggestions"));
+            // Suggestions never outlive the session unless liked.
+            if let Err(e) = downloads.purge_suggestions(&library) {
+                tracing::warn!("cannot purge suggestions: {e}");
+            }
+            app.manage(downloads);
             app.manage(Search::default());
             app.manage(library);
             Ok(())
