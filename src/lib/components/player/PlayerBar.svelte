@@ -107,7 +107,7 @@
         </div>
       {/if}
       <span class="badge" title="Lecture synchronisée avec le groupe d'écoute">Groupe</span>
-    {:else if s.path}
+    {:else if s.path || s.loading}
       <div class="cover" aria-hidden="true">
         {#key coverSrc}
           {#if coverSrc}
@@ -121,8 +121,12 @@
         ♪
       </div>
       <div class="meta">
-        <span class="title" title={s.path}>{track?.title ?? fileName(s.path)}</span>
-        <span class="artist">{track?.artist ?? "Artiste inconnu"}</span>
+        <span class="title" title={s.path ?? undefined}
+          >{track?.title ?? (s.path ? fileName(s.path) : "")}</span
+        >
+        <span class="artist"
+          >{s.loading ? "Téléchargement…" : (track?.artist ?? "Artiste inconnu")}</span
+        >
       </div>
     {/if}
   </div>

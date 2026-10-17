@@ -15,7 +15,7 @@
   function info({ track_id, path }: QueueItem) {
     const track = library.byId.get(track_id);
     return {
-      title: track?.title ?? fileName(path),
+      title: track?.title ?? (path ? fileName(path) : "Titre inconnu"),
       artist: track?.artist ?? "Artiste inconnu",
       duration: track?.duration,
     };

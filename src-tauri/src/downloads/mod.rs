@@ -102,6 +102,52 @@ impl Downloads {
         Ok(())
     }
 
+    /// Path of the file of the library track with `youtube_id`, downloading it
+    /// first if needed (with progress events, like [`Downloads::start`]). Used to
+    /// play a track that is in the library without a file.
+    pub fn fetch(
+        &self,
+        app: AppHandle,
+        library: Library,
+        youtube_id: String,
+    ) -> impl Future<Output = AppResult<String>> + Send + 'static {
+        let (dir, permits) = (self.dir.clone(), Arc::clone(&self.permits));
+        async move {
+            if let Some(path) = library
+                .find_by_youtube_id(&youtube_id)?
+                .and_then(|t| t.path)
+                .filter(|p| Path::new(p).is_file())
+            {
+                return Ok(path);
+            }
+            emit(&app, &youtube_id, DownloadStatus::Queued, None, None);
+            let _permit = permits.acquire_owned().await;
+            let result = download(&youtube_id, &dir, |status, progress| {
+                emit(&app, &youtube_id, status, progress, None)
+            })
+            .await
+            .and_then(|path| library.add_downloaded(&path.to_string_lossy(), &youtube_id));
+            match result {
+                Ok(track) => {
+                    emit(&app, &youtube_id, DownloadStatus::Done, None, None);
+                    track
+                        .path
+                        .ok_or_else(|| AppError::Internal("downloaded track has no path".into()))
+                }
+                Err(e) => {
+                    emit(
+                        &app,
+                        &youtube_id,
+                        DownloadStatus::Error,
+                        None,
+                        Some(e.to_string()),
+                    );
+                    Err(e)
+                }
+            }
+        }
+    }
+
     pub fn cancel(&self, app: &AppHandle, youtube_id: &str) {
         let Some(task) = self.active.lock().unwrap().remove(youtube_id) else {
             return;

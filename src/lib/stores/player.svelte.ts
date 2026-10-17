@@ -15,6 +15,7 @@ class Player {
     path: null,
     playing: false,
     loaded: false,
+    loading: false,
     position: 0,
     duration: 0,
     volume: 1,
