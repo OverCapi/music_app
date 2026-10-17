@@ -71,7 +71,7 @@ impl Downloads {
         ytdlp::video_url(&youtube_id)?;
         // A track whose file is gone may be downloaded again (`add_downloaded` updates it).
         let existing = library.find_by_youtube_id(&youtube_id)?;
-        if existing.is_some_and(|t| Path::new(&t.path).is_file()) {
+        if existing.is_some_and(|t| t.path.is_some_and(|p| Path::new(&p).is_file())) {
             return Err(AppError::invalid("Ce titre est déjà dans la bibliothèque"));
         }
         // Held while spawning, so the task can't remove its entry before it is inserted.

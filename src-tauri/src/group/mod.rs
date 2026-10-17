@@ -533,10 +533,10 @@ impl Inner {
             .app
             .try_state::<Library>()
             .and_then(|library| library.find_by_youtube_id(youtube_id).ok().flatten())
-            .filter(|track| Path::new(&track.path).is_file());
-        if let Some(track) = in_library {
-            m.files
-                .insert(youtube_id.to_owned(), PathBuf::from(track.path));
+            .and_then(|track| track.path)
+            .filter(|path| Path::new(path).is_file());
+        if let Some(path) = in_library {
+            m.files.insert(youtube_id.to_owned(), PathBuf::from(path));
             m.downloads.insert(
                 youtube_id.to_owned(),
                 TrackDownload::new(TrackStatus::Ready),

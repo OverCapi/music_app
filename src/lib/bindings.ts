@@ -260,8 +260,8 @@ export type SearchResult = {
 
 export type Track = {
 	id: number,
-	/**  Absolute path (unique). */
-	path: string,
+	/**  Absolute path (unique); `None` until the file is downloaded. */
+	path: string | null,
 	title: string,
 	artist: string | null,
 	album: string | null,
