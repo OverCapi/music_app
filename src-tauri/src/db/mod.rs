@@ -16,7 +16,8 @@ use crate::error::{AppError, AppResult};
 
 const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("migrations/001_initial.sql")),
-    M::up(include_str!("migrations/002_remote_tracks.sql")).foreign_key_check(),
+    M::up(include_str!("migrations/002_plays.sql")),
+    M::up(include_str!("migrations/003_remote_tracks.sql")).foreign_key_check(),
 ];
 
 /// Shared handle to the database. Cheap to clone; queries are short so one
@@ -85,7 +86,7 @@ mod tests {
     #[test]
     fn remote_tracks_migration_merges_youtube_duplicates() {
         let mut conn = Connection::open_in_memory().unwrap();
-        Migrations::from_slice(&MIGRATIONS[..1])
+        Migrations::from_slice(&MIGRATIONS[..2])
             .to_latest(&mut conn)
             .unwrap();
         conn.execute_batch(
@@ -94,7 +95,9 @@ mod tests {
                  (2, '/a2.opus', 'A', 'aaaaaaaaaaa', 2),
                  (3, '/b.mp3', 'B', NULL, 3);
              INSERT INTO playlists (id, name, created_at) VALUES (1, 'P', 1), (2, 'Q', 1);
-             INSERT INTO playlist_tracks VALUES (1, 2, 0), (1, 3, 1), (2, 1, 0), (2, 2, 1);",
+             INSERT INTO playlist_tracks VALUES (1, 2, 0), (1, 3, 1), (2, 1, 0), (2, 2, 1);
+             INSERT INTO plays (track_id, title, source, started_at, listened, completed)
+                 VALUES (2, 'A', 'library', 1, 1.0, 1);",
         )
         .unwrap();
         Db::init(&mut conn).unwrap();
@@ -115,6 +118,7 @@ mod tests {
             ids("SELECT track_id FROM playlist_tracks WHERE playlist_id = 2"),
             [1]
         );
+        assert_eq!(ids("SELECT track_id FROM plays"), [1]);
         // Foreign keys are back on: deleting a track still cleans playlists.
         conn.execute("DELETE FROM tracks WHERE id = 3", []).unwrap();
         assert_eq!(

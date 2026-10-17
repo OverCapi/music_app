@@ -5,9 +5,12 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
-	/**  Replaces the queue with `track_ids` and plays `track_ids[start]`. */
-	playQueue: (trackIds: number[], start: number) => __TAURI_INVOKE<null>("play_queue", { trackIds, start }),
-	enqueue: (trackIds: number[]) => __TAURI_INVOKE<null>("enqueue", { trackIds }),
+	/**
+	 *  Replaces the queue with `track_ids` and plays `track_ids[start]`; `source` is
+	 *  where the listens come from (for the history).
+	 */
+	playQueue: (trackIds: number[], start: number, source: PlaySource) => __TAURI_INVOKE<null>("play_queue", { trackIds, start, source }),
+	enqueue: (trackIds: number[], source: PlaySource) => __TAURI_INVOKE<null>("enqueue", { trackIds, source }),
 	playIndex: (index: number) => __TAURI_INVOKE<null>("play_index", { index }),
 	removeFromQueue: (index: number) => __TAURI_INVOKE<null>("remove_from_queue", { index }),
 	clearQueue: () => __TAURI_INVOKE<null>("clear_queue"),
@@ -69,6 +72,8 @@ export const commands = {
 	groupPause: () => __TAURI_INVOKE<null>("group_pause"),
 	groupSeek: (position: number | null) => __TAURI_INVOKE<null>("group_seek", { position }),
 	groupSkip: () => __TAURI_INVOKE<null>("group_skip"),
+	/**  Most recent listens first. */
+	getRecentPlays: (limit: number) => __TAURI_INVOKE<Play[]>("get_recent_plays", { limit }),
 };
 
 /** Events */
@@ -152,6 +157,29 @@ export type Member = {
 	ready: boolean,
 };
 
+/**  A recorded listen. */
+export type Play = {
+	id: number,
+	/**  `None` for group tracks and for tracks removed from the library since. */
+	track_id: number | null,
+	youtube_id: string | null,
+	title: string,
+	artist: string | null,
+	source: PlaySource,
+	/**  Unix timestamp (seconds). */
+	started_at: number,
+	/**  Seconds actually heard. */
+	listened: number | null,
+	/**  Seconds (0 when unknown). */
+	duration: number | null,
+	completed: boolean,
+};
+
+/**  Where a listen came from. */
+export type PlaySource = "library" | "playlist" | 
+/**  Random track picked because the queue ran out. */
+"autoplay" | "group";
+
 export type Playback = { status: "idle" } | { status: "preparing"; deadline_ms: number } | { status: "playing"; position: number | null; at_ms: number } | { status: "paused"; position: number | null };
 
 export type PlayerChanged = PlayerState;
@@ -208,10 +236,11 @@ export type QueueEntry = {
 	added_by: string,
 };
 
-/**  One queue entry: the library track and its resolved path. */
+/**  One queue entry: the library track, its resolved path and where it came from. */
 export type QueueItem = {
 	track_id: number,
 	path: string,
+	source: PlaySource,
 };
 
 export type QueueState = {

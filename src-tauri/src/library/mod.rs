@@ -24,6 +24,7 @@ use tauri_specta::Event;
 use crate::audio::{QueueItem, RandomPicker};
 use crate::db::{Db, now_secs};
 use crate::error::{AppError, AppResult};
+use crate::history::PlaySource;
 
 pub type TrackId = i64;
 
@@ -122,7 +123,7 @@ impl Library {
 
     /// Resolves ids to queue items, in order (error if one is unknown or not
     /// downloaded yet).
-    pub fn queue_items(&self, ids: &[TrackId]) -> AppResult<Vec<QueueItem>> {
+    pub fn queue_items(&self, ids: &[TrackId], source: PlaySource) -> AppResult<Vec<QueueItem>> {
         let conn = self.db.conn();
         let mut stmt = conn.prepare("SELECT path FROM tracks WHERE id = ?1")?;
         ids.iter()
@@ -132,7 +133,11 @@ impl Library {
                     .optional()?
                     .ok_or_else(|| AppError::not_found(GONE))?;
                 let path = path.ok_or_else(|| AppError::invalid(NOT_DOWNLOADED))?;
-                Ok(QueueItem { track_id, path })
+                Ok(QueueItem {
+                    track_id,
+                    path,
+                    source,
+                })
             })
             .collect()
     }
@@ -321,6 +326,7 @@ impl Library {
                         Ok(QueueItem {
                             track_id: row.get(0)?,
                             path: row.get(1)?,
+                            source: PlaySource::Autoplay,
                         })
                     },
                 )
@@ -519,13 +525,13 @@ pub(crate) mod tests {
         let lib = Library::new(Db::in_memory(), None);
         let a = insert_track(&lib, "/a.mp3");
         let b = insert_track(&lib, "/b.mp3");
-        let items = lib.queue_items(&[b, a]).unwrap();
+        let items = lib.queue_items(&[b, a], PlaySource::Library).unwrap();
         assert_eq!(items[0].path, "/b.mp3");
         assert_eq!(items[1].track_id, a);
 
         assert_eq!(lib.remove(a).unwrap().path.as_deref(), Some("/a.mp3"));
         assert!(lib.get(a).is_err());
-        assert!(lib.queue_items(&[a]).is_err());
+        assert!(lib.queue_items(&[a], PlaySource::Library).is_err());
         assert!(lib.remove(a).is_err());
     }
 
@@ -611,7 +617,7 @@ pub(crate) mod tests {
             .add_remote(&[remote("Get Lucky", "Daft Punk", 248.0, Some("aaaaaaaaaaa"))])
             .unwrap()[0];
 
-        assert!(lib.queue_items(&[id]).is_err());
+        assert!(lib.queue_items(&[id], PlaySource::Library).is_err());
         assert!(lib.random_picker()(None).is_none());
         assert_eq!(lib.cover(id).unwrap(), None);
 
@@ -620,7 +626,10 @@ pub(crate) mod tests {
         assert_eq!(downloaded.id, id);
         assert_eq!(downloaded.title, "Get Lucky");
         assert_eq!(downloaded.path.as_deref(), Some(wav.as_str()));
-        assert_eq!(lib.queue_items(&[id]).unwrap()[0].path, wav);
+        assert_eq!(
+            lib.queue_items(&[id], PlaySource::Library).unwrap()[0].path,
+            wav
+        );
         assert_eq!(lib.tracks().unwrap().len(), 1);
         std::fs::remove_dir_all(dir).unwrap();
     }

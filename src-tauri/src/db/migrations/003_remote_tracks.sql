@@ -15,6 +15,8 @@ INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position)
 SELECT pt.playlist_id, d.keep, pt.position
 FROM playlist_tracks pt JOIN duplicate_tracks d ON d.id = pt.track_id;
 DELETE FROM playlist_tracks WHERE track_id IN (SELECT id FROM duplicate_tracks);
+UPDATE plays SET track_id = (SELECT keep FROM duplicate_tracks d WHERE d.id = plays.track_id)
+WHERE track_id IN (SELECT id FROM duplicate_tracks);
 
 CREATE TABLE tracks_new (
     id         INTEGER PRIMARY KEY,
