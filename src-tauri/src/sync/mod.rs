@@ -8,9 +8,14 @@
 //! which reuses tracks already in the library), and each service playlist fills a
 //! local playlist linked in `sync_playlists`; a sync replaces its content.
 //!
+//! Spotify: no API (it needs Premium); the user imports the account data export
+//! ([`spotify`]). Its tracks have no YouTube id: they reuse a library track with the
+//! same artist and title when there is one, otherwise they wait to be matched.
+//!
 //! Progress is pushed as [`SyncProgress`] events.
 
 pub mod commands;
+mod spotify;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -24,11 +29,15 @@ use tauri_specta::Event;
 
 use crate::db::{Db, now_secs};
 use crate::error::{AppError, AppResult};
-use crate::library::{Library, RemoteTrack};
+use crate::library::{Library, RemoteTrack, TrackId};
 use crate::playlists::{PlaylistId, Playlists};
 use crate::ytdlp;
 
 const YOUTUBE_MUSIC: &str = "youtube_music";
+const SPOTIFY: &str = "spotify";
+const SPOTIFY_LIKED_ID: &str = "liked";
+const SPOTIFY_LIKED_NAME: &str = "Titres likés Spotify";
+const SPOTIFY_IMPORTED_AT_KEY: &str = "spotify_imported_at";
 /// YouTube's id of the "liked music" playlist.
 const LIKED_ID: &str = "LM";
 const LIKED_NAME: &str = "Titres likés YouTube Music";
@@ -47,6 +56,10 @@ pub struct SyncSettings {
     pub ytmusic_synced_at: Option<i64>,
     /// Browsers that can be chosen.
     pub browsers: Vec<String>,
+    /// Unix timestamp (seconds) of the last Spotify export import.
+    pub spotify_imported_at: Option<i64>,
+    /// Artists followed on Spotify (from the last import), by name.
+    pub spotify_artists: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, specta::Type)]
@@ -56,6 +69,8 @@ pub struct SyncReport {
     pub tracks: u32,
     /// Tracks that were not in the library before.
     pub new_tracks: u32,
+    /// Followed artists imported (Spotify).
+    pub artists: u32,
     /// Playlists that could not be read (the others were imported).
     pub errors: Vec<String>,
 }
@@ -110,6 +125,10 @@ impl LibrarySync {
                 .iter()
                 .map(|b| (*b).to_owned())
                 .collect(),
+            spotify_imported_at: self
+                .setting(SPOTIFY_IMPORTED_AT_KEY)?
+                .and_then(|v| v.parse().ok()),
+            spotify_artists: self.followed_artists(SPOTIFY)?,
         })
     }
 
@@ -126,15 +145,71 @@ impl LibrarySync {
         let browser = self.setting(BROWSER_KEY)?.ok_or_else(|| {
             AppError::invalid("Choisis d'abord le navigateur connecté à YouTube Music")
         })?;
-        if self.running.swap(true, Ordering::SeqCst) {
-            return Err(AppError::invalid("Une synchronisation est déjà en cours"));
-        }
+        let _running = self.start()?;
         let result = self.run_youtube_music(&browser).await;
-        self.running.store(false, Ordering::SeqCst);
         if result.is_ok() {
             self.set_setting(SYNCED_AT_KEY, &now_secs().to_string())?;
         }
         result
+    }
+
+    /// Imports the Spotify account data export (the `.zip`, or JSON files from it):
+    /// liked songs, the user's playlists and followed artists. Blocking (file reads
+    /// and database): run it off the async runtime.
+    pub fn import_spotify(&self, paths: &[String]) -> AppResult<SyncReport> {
+        let _running = self.start()?;
+        self.progress("Lecture de l'export Spotify", 0, 0);
+        let export = spotify::read_export(paths)?;
+        let before = self.library.tracks()?.len();
+        let mut report = SyncReport::default();
+        let mut seen = HashSet::new();
+
+        let total = export.playlists.len() as u32 + 1;
+        self.progress(SPOTIFY_LIKED_NAME, 0, total);
+        self.import_playlist(
+            SPOTIFY,
+            SPOTIFY_LIKED_ID,
+            SPOTIFY_LIKED_NAME,
+            &export.liked,
+            &mut seen,
+        )?;
+        report.playlists += 1;
+
+        // The export has no playlist ids: the name identifies a playlist, numbered
+        // when several have the same one.
+        let mut names = HashSet::new();
+        for (i, playlist) in export.playlists.iter().enumerate() {
+            self.progress(&playlist.name, i as u32 + 1, total);
+            let mut external_id = format!("name:{}", playlist.name);
+            let mut n = 1;
+            while !names.insert(external_id.clone()) {
+                n += 1;
+                external_id = format!("name:{}#{n}", playlist.name);
+            }
+            self.import_playlist(
+                SPOTIFY,
+                &external_id,
+                &playlist.name,
+                &playlist.tracks,
+                &mut seen,
+            )?;
+            report.playlists += 1;
+        }
+
+        self.set_followed_artists(SPOTIFY, &export.artists)?;
+        report.artists = self.followed_artists(SPOTIFY)?.len() as u32;
+        report.tracks = seen.len() as u32;
+        report.new_tracks = self.library.tracks()?.len().saturating_sub(before) as u32;
+        self.set_setting(SPOTIFY_IMPORTED_AT_KEY, &now_secs().to_string())?;
+        Ok(report)
+    }
+
+    /// Marks a sync as running until the guard is dropped; errors if one already is.
+    fn start(&self) -> AppResult<RunningGuard> {
+        if self.running.swap(true, Ordering::SeqCst) {
+            return Err(AppError::invalid("Une synchronisation est déjà en cours"));
+        }
+        Ok(RunningGuard(Arc::clone(&self.running)))
     }
 
     async fn run_youtube_music(&self, browser: &str) -> AppResult<SyncReport> {
@@ -145,7 +220,7 @@ impl LibrarySync {
         // Liked songs first: if the cookies don't work, this is where it shows.
         self.progress("Titres likés", 0, 0);
         let liked = read_playlist(browser, LIKED_ID).await?;
-        self.import_playlist(LIKED_ID, LIKED_NAME, &liked, &mut seen)?;
+        self.import_playlist(YOUTUBE_MUSIC, LIKED_ID, LIKED_NAME, &liked, &mut seen)?;
         report.playlists += 1;
 
         self.progress("Liste des playlists", 0, 0);
@@ -180,7 +255,7 @@ impl LibrarySync {
             self.progress(&name, done as u32, total);
             match read_playlist(browser, &list.id).await {
                 Ok(entries) => {
-                    self.import_playlist(&list.id, &name, &entries, &mut seen)?;
+                    self.import_playlist(YOUTUBE_MUSIC, &list.id, &name, &entries, &mut seen)?;
                     report.playlists += 1;
                 }
                 Err(e) => report.errors.push(format!("{name} : {e}")),
@@ -194,28 +269,34 @@ impl LibrarySync {
 
     /// Adds the playlist's tracks to the library and replaces the content of the
     /// linked local playlist (created, or renamed when the service name changed).
+    /// `seen` collects the library ids of every track imported.
     fn import_playlist(
         &self,
+        service: &str,
         external_id: &str,
         name: &str,
-        entries: &[FlatEntry],
-        seen: &mut HashSet<String>,
+        tracks: &[RemoteTrack],
+        seen: &mut HashSet<TrackId>,
     ) -> AppResult<PlaylistId> {
-        let tracks: Vec<RemoteTrack> = entries.iter().filter_map(remote_track).collect();
-        seen.extend(tracks.iter().filter_map(|t| t.youtube_id.clone()));
-        let track_ids = self.library.add_remote(&tracks)?;
-        let playlist_id = self.linked_playlist(external_id, name)?;
+        let track_ids = self.library.add_remote(tracks)?;
+        seen.extend(&track_ids);
+        let playlist_id = self.linked_playlist(service, external_id, name)?;
         self.playlists.set_tracks(playlist_id, &track_ids)?;
         Ok(playlist_id)
     }
 
-    fn linked_playlist(&self, external_id: &str, name: &str) -> AppResult<PlaylistId> {
+    fn linked_playlist(
+        &self,
+        service: &str,
+        external_id: &str,
+        name: &str,
+    ) -> AppResult<PlaylistId> {
         let linked: Option<PlaylistId> = self
             .db
             .conn()
             .query_row(
                 "SELECT playlist_id FROM sync_playlists WHERE service = ?1 AND external_id = ?2",
-                params![YOUTUBE_MUSIC, external_id],
+                params![service, external_id],
                 |row| row.get(0),
             )
             .optional()?;
@@ -231,9 +312,37 @@ impl LibrarySync {
         let id = self.playlists.create(&name)?.id;
         self.db.conn().execute(
             "INSERT INTO sync_playlists (service, external_id, playlist_id) VALUES (?1, ?2, ?3)",
-            params![YOUTUBE_MUSIC, external_id, id],
+            params![service, external_id, id],
         )?;
         Ok(id)
+    }
+
+    fn followed_artists(&self, service: &str) -> AppResult<Vec<String>> {
+        let conn = self.db.conn();
+        let mut stmt = conn.prepare(
+            "SELECT name FROM followed_artists WHERE service = ?1 ORDER BY name COLLATE NOCASE",
+        )?;
+        let names = stmt
+            .query_map([service], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        Ok(names)
+    }
+
+    /// Replaces the followed artists of a service.
+    fn set_followed_artists(&self, service: &str, names: &[String]) -> AppResult<()> {
+        let mut conn = self.db.conn();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM followed_artists WHERE service = ?1", [service])?;
+        {
+            let mut insert = tx.prepare(
+                "INSERT OR IGNORE INTO followed_artists (service, name) VALUES (?1, ?2)",
+            )?;
+            for name in names {
+                insert.execute(params![service, name])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     fn progress(&self, step: &str, done: u32, total: u32) {
@@ -269,16 +378,27 @@ impl LibrarySync {
     }
 }
 
-async fn read_playlist(browser: &str, playlist_id: &str) -> AppResult<Vec<FlatEntry>> {
+/// Clears [`LibrarySync::running`] when dropped, even if the sync fails.
+struct RunningGuard(Arc<AtomicBool>);
+
+impl Drop for RunningGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+/// The playlist's videos, as library tracks.
+async fn read_playlist(browser: &str, playlist_id: &str) -> AppResult<Vec<RemoteTrack>> {
     let url = ytdlp::playlist_url(playlist_id)?;
-    ytdlp::run_json(&[
+    let entries: Vec<FlatEntry> = ytdlp::run_json(&[
         url.as_str(),
         "--flat-playlist",
         "--dump-json",
         "--cookies-from-browser",
         browser,
     ])
-    .await
+    .await?;
+    Ok(entries.iter().filter_map(remote_track).collect())
 }
 
 /// A playlist video as a library track. Artist: the channel ("X - Topic" for
@@ -342,6 +462,10 @@ mod tests {
         }
     }
 
+    fn tracks(entries: &[&FlatEntry]) -> Vec<RemoteTrack> {
+        entries.iter().filter_map(|e| remote_track(e)).collect()
+    }
+
     fn setup() -> (LibrarySync, Library, Playlists) {
         let db = Db::in_memory();
         let library = Library::new(db.clone(), None);
@@ -396,10 +520,16 @@ mod tests {
         let c = entry("ccccccccccc", "C", "X - Topic", 100.0);
 
         let liked = sync
-            .import_playlist("LM", LIKED_NAME, &[a.clone(), b.clone()], &mut seen)
+            .import_playlist(
+                YOUTUBE_MUSIC,
+                "LM",
+                LIKED_NAME,
+                &tracks(&[&a, &b]),
+                &mut seen,
+            )
             .unwrap();
         let other = sync
-            .import_playlist("PL1", "Rock", &[b.clone(), c.clone()], &mut seen)
+            .import_playlist(YOUTUBE_MUSIC, "PL1", "Rock", &tracks(&[&b, &c]), &mut seen)
             .unwrap();
         assert_ne!(liked, other);
         assert_eq!(library.tracks().unwrap().len(), 3);
@@ -407,7 +537,13 @@ mod tests {
 
         // Second sync: same playlist, new content and name; B removed from it.
         let again = sync
-            .import_playlist("PL1", "Rock & Roll", &[c.clone(), a.clone()], &mut seen)
+            .import_playlist(
+                YOUTUBE_MUSIC,
+                "PL1",
+                "Rock & Roll",
+                &tracks(&[&c, &a]),
+                &mut seen,
+            )
             .unwrap();
         assert_eq!(again, other);
         let all = playlists.all().unwrap();
@@ -422,7 +558,13 @@ mod tests {
         // A deleted local playlist is recreated by the next sync.
         playlists.delete(other).unwrap();
         let recreated = sync
-            .import_playlist("PL1", "Rock & Roll", std::slice::from_ref(&c), &mut seen)
+            .import_playlist(
+                YOUTUBE_MUSIC,
+                "PL1",
+                "Rock & Roll",
+                &tracks(&[&c]),
+                &mut seen,
+            )
             .unwrap();
         let all = playlists.all().unwrap();
         assert_eq!(all.len(), 2);
@@ -438,5 +580,64 @@ mod tests {
         let settings = sync.set_ytmusic_browser("firefox").unwrap();
         assert_eq!(settings.ytmusic_browser.as_deref(), Some("firefox"));
         assert!(settings.browsers.contains(&"chrome".to_owned()));
+    }
+
+    #[test]
+    fn spotify_import_reuses_youtube_music_tracks() {
+        let (sync, library, playlists) = setup();
+        let mut seen = HashSet::new();
+        let lucky = entry("aaaaaaaaaaa", "Get Lucky", "Daft Punk - Topic", 248.0);
+        sync.import_playlist(
+            YOUTUBE_MUSIC,
+            "LM",
+            LIKED_NAME,
+            &tracks(&[&lucky]),
+            &mut seen,
+        )
+        .unwrap();
+
+        let dir = crate::library::tests::temp_dir("spotify-sync");
+        let library_json = dir.join("YourLibrary.json");
+        std::fs::write(
+            &library_json,
+            r#"{"tracks": [
+                {"artist": "Daft Punk", "album": "RAM", "track": "Get Lucky (feat. Pharrell Williams)"},
+                {"artist": "Queen", "album": "", "track": "Bohemian Rhapsody"}
+            ], "artists": [{"name": "Queen"}, {"name": "Daft Punk"}, {"name": "Queen"}]}"#,
+        )
+        .unwrap();
+        let playlists_json = dir.join("Playlist1.json");
+        std::fs::write(
+            &playlists_json,
+            r#"{"playlists": [
+                {"name": "Mix", "items": [{"track": {"trackName": "Bohemian Rhapsody",
+                    "artistName": "Queen", "albumName": ""}}]},
+                {"name": "Mix", "items": []}
+            ]}"#,
+        )
+        .unwrap();
+        let paths = [
+            library_json.to_string_lossy().into_owned(),
+            playlists_json.to_string_lossy().into_owned(),
+        ];
+
+        let report = sync.import_spotify(&paths).unwrap();
+        assert_eq!(report.playlists, 3);
+        assert_eq!(report.tracks, 2);
+        assert_eq!(report.new_tracks, 1, "Get Lucky is already in the library");
+        assert_eq!(report.artists, 2);
+        assert_eq!(library.tracks().unwrap().len(), 2);
+        let settings = sync.settings().unwrap();
+        assert!(settings.spotify_imported_at.is_some());
+        assert_eq!(settings.spotify_artists, ["Daft Punk", "Queen"]);
+
+        // Same names: two distinct playlists, kept on a second import.
+        sync.import_spotify(&paths).unwrap();
+        let all = playlists.all().unwrap();
+        assert_eq!(all.len(), 4);
+        assert_eq!(all.iter().filter(|p| p.name == "Mix").count(), 2);
+        assert_eq!(library.tracks().unwrap().len(), 2);
+        assert!(!sync.running.load(Ordering::SeqCst));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

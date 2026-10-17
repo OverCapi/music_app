@@ -81,6 +81,11 @@ export const commands = {
 	 *  `SyncProgress` events.
 	 */
 	syncYoutubeMusic: () => __TAURI_INVOKE<SyncReport>("sync_youtube_music"),
+	/**
+	 *  Imports the Spotify data export (`paths`: the `.zip` or JSON files from it);
+	 *  progress comes as `SyncProgress` events.
+	 */
+	importSpotify: (paths: string[]) => __TAURI_INVOKE<SyncReport>("import_spotify", { paths }),
 };
 
 /** Events */
@@ -313,6 +318,8 @@ export type SyncReport = {
 	tracks: number,
 	/**  Tracks that were not in the library before. */
 	new_tracks: number,
+	/**  Followed artists imported (Spotify). */
+	artists: number,
 	/**  Playlists that could not be read (the others were imported). */
 	errors: string[],
 };
@@ -324,6 +331,10 @@ export type SyncSettings = {
 	ytmusic_synced_at: number | null,
 	/**  Browsers that can be chosen. */
 	browsers: string[],
+	/**  Unix timestamp (seconds) of the last Spotify export import. */
+	spotify_imported_at: number | null,
+	/**  Artists followed on Spotify (from the last import), by name. */
+	spotify_artists: string[],
 };
 
 export type Track = {

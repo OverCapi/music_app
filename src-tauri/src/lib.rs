@@ -91,6 +91,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             sync::commands::get_sync_settings,
             sync::commands::set_ytmusic_browser,
             sync::commands::sync_youtube_music,
+            sync::commands::import_spotify,
         ])
         .events(collect_events![
             audio::PlayerChanged,

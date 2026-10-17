@@ -19,6 +19,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("migrations/002_plays.sql")),
     M::up(include_str!("migrations/003_remote_tracks.sql")).foreign_key_check(),
     M::up(include_str!("migrations/004_sync.sql")),
+    M::up(include_str!("migrations/005_followed_artists.sql")),
 ];
 
 /// Shared handle to the database. Cheap to clone; queries are short so one

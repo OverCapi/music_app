@@ -8,28 +8,40 @@ import {
 } from "#lib/bindings.ts";
 import { attempt } from "#lib/stores/toasts.svelte.ts";
 
+export type SyncService = "youtube_music" | "spotify";
+
 class Sync {
   /** `null` until loaded. */
   settings = $state<SyncSettings | null>(null);
-  running = $state(false);
+  /** The service being synced (only one at a time). */
+  running = $state<SyncService | null>(null);
   progress = $state<SyncProgress | null>(null);
-  /** Result of the last sync run in this session. */
-  report = $state<SyncReport | null>(null);
+  /** Result of the last run of each service in this session. */
+  reports = $state<Partial<Record<SyncService, SyncReport>>>({});
 
   async setBrowser(browser: string) {
     const settings = await attempt(() => commands.setYtmusicBrowser(browser));
     if (settings) this.settings = settings;
   }
 
-  async syncYoutubeMusic() {
-    this.running = true;
+  syncYoutubeMusic() {
+    return this.run("youtube_music", () => commands.syncYoutubeMusic());
+  }
+
+  /** `paths`: the Spotify export `.zip`, or JSON files extracted from it. */
+  importSpotify(paths: string[]) {
+    return this.run("spotify", () => commands.importSpotify(paths));
+  }
+
+  private async run(service: SyncService, start: () => Promise<SyncReport>) {
+    this.running = service;
     this.progress = null;
-    const report = await attempt(() => commands.syncYoutubeMusic());
-    this.running = false;
+    const report = await attempt(start);
+    this.running = null;
     this.progress = null;
     if (report) {
-      this.report = report;
-      // Refresh the last sync date.
+      this.reports[service] = report;
+      // Refresh the last sync date (and the followed artists).
       const settings = await attempt(() => commands.getSyncSettings());
       if (settings) this.settings = settings;
     }

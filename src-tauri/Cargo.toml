@@ -38,6 +38,7 @@ trash = "5"
 reqwest.workspace = true
 tokio-tungstenite.workspace = true
 futures-util.workspace = true
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true
