@@ -78,6 +78,8 @@ export const commands = {
 	getFeedback: () => __TAURI_INVOKE<FeedbackState>("get_feedback"),
 	setFeedback: (target: FeedbackTarget, kind: FeedbackKind) => __TAURI_INVOKE<null>("set_feedback", { target, kind }),
 	clearFeedback: (target: FeedbackTarget) => __TAURI_INVOKE<null>("clear_feedback", { target }),
+	/**  What the user likes, computed from the listening history and the feedback. */
+	getTasteProfile: () => __TAURI_INVOKE<TasteProfile>("get_taste_profile"),
 	getRadio: (youtubeId: string) => __TAURI_INVOKE<RadioTrack[]>("get_radio", { youtubeId }),
 	getSyncSettings: () => __TAURI_INVOKE<SyncSettings>("get_sync_settings"),
 	setYtmusicBrowser: (browser: string) => __TAURI_INVOKE<SyncSettings>("set_ytmusic_browser", { browser }),
@@ -361,6 +363,25 @@ export type SyncSettings = {
 	ytmusic_synced_at: number | null,
 	/**  Browsers that can be chosen. */
 	browsers: string[],
+};
+
+export type TasteArtist = {
+	/**  Display name, as in the most recent listen. */
+	artist: string,
+	score: number | null,
+};
+
+/**  Both lists sorted by score, best first; only positive scores. */
+export type TasteProfile = {
+	tracks: TasteTrack[],
+	artists: TasteArtist[],
+};
+
+export type TasteTrack = {
+	youtube_id: string,
+	title: string,
+	artist: string | null,
+	score: number | null,
 };
 
 export type Track = {

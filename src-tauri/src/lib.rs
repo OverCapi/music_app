@@ -18,6 +18,7 @@ mod playlists;
 mod radio;
 mod search;
 mod sync;
+mod taste;
 mod ytdlp;
 
 use std::path::PathBuf;
@@ -94,6 +95,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             feedback::commands::get_feedback,
             feedback::commands::set_feedback,
             feedback::commands::clear_feedback,
+            taste::commands::get_taste_profile,
             radio::commands::get_radio,
             sync::commands::get_sync_settings,
             sync::commands::set_ytmusic_browser,
@@ -207,7 +209,8 @@ pub fn run() {
             let db = Db::open(&data_dir.join("music.db"), &data_dir)?;
             let library = Library::new(db.clone(), Some(handle.clone()));
             let history = History::new(db.clone());
-            app.manage(Feedback::new(db.clone(), Some(handle.clone())));
+            let feedback = Feedback::new(db.clone(), Some(handle.clone()));
+            app.manage(feedback.clone());
             app.manage(radio::Radio::new(db.clone()));
             app.manage(AudioHandle::spawn(
                 handle.clone(),
@@ -215,6 +218,7 @@ pub fn run() {
                 history.recorder(),
                 track_fetcher(handle.clone()),
             ));
+            app.manage(taste::Taste::new(history.clone(), feedback));
             app.manage(history);
             let playlists = Playlists::new(db.clone(), Some(handle.clone()));
             app.manage(LibrarySync::new(
