@@ -250,7 +250,9 @@ export type Play = {
 /**  Where a listen came from. */
 export type PlaySource = "library" | "playlist" | 
 /**  Random track picked because the queue ran out. */
-"autoplay" | "group";
+"autoplay" | "group" | 
+/**  Listen started from a generated mix or from the discoveries. */
+"mix";
 
 export type Playback = { status: "idle" } | { status: "preparing"; deadline_ms: number } | { status: "playing"; position: number | null; at_ms: number } | { status: "paused"; position: number | null };
 

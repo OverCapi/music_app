@@ -28,6 +28,8 @@ pub enum PlaySource {
     /// Random track picked because the queue ran out.
     Autoplay,
     Group,
+    /// Listen started from a generated mix or from the discoveries.
+    Mix,
 }
 
 impl PlaySource {
@@ -37,6 +39,7 @@ impl PlaySource {
             Self::Playlist => "playlist",
             Self::Autoplay => "autoplay",
             Self::Group => "group",
+            Self::Mix => "mix",
         }
     }
 
@@ -46,6 +49,7 @@ impl PlaySource {
             "playlist" => Self::Playlist,
             "autoplay" => Self::Autoplay,
             "group" => Self::Group,
+            "mix" => Self::Mix,
             _ => Self::Library,
         }
     }
@@ -349,6 +353,7 @@ mod tests {
             PlaySource::Playlist,
             PlaySource::Autoplay,
             PlaySource::Group,
+            PlaySource::Mix,
         ] {
             assert_eq!(PlaySource::parse(s.as_str()), s);
         }
