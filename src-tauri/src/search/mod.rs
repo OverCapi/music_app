@@ -61,14 +61,15 @@ pub struct SearchDetails {
     pub duration: Option<f64>,
 }
 
+/// One line of `yt-dlp --flat-playlist --dump-json`. Also used by `radio`.
 #[derive(Deserialize)]
-struct FlatEntry {
-    id: String,
-    title: Option<String>,
-    channel: Option<String>,
-    uploader: Option<String>,
-    duration: Option<f64>,
-    view_count: Option<u64>,
+pub(crate) struct FlatEntry {
+    pub(crate) id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) channel: Option<String>,
+    pub(crate) uploader: Option<String>,
+    pub(crate) duration: Option<f64>,
+    pub(crate) view_count: Option<u64>,
 }
 
 #[derive(Deserialize)]

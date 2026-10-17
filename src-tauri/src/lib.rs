@@ -15,6 +15,8 @@ mod group;
 mod history;
 mod library;
 mod playlists;
+#[allow(dead_code)] // wired in the next step
+mod radio;
 mod search;
 mod sync;
 mod ytdlp;

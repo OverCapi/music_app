@@ -26,6 +26,18 @@ pub fn video_url(youtube_id: &str) -> AppResult<String> {
     Ok(format!("https://music.youtube.com/watch?v={youtube_id}"))
 }
 
+/// Radio URLs of a seed track, only for a valid id: the YouTube Music radio
+/// (`RDAMVM<id>`) first, then the classic YouTube Mix (`RD<id>`) as fallback.
+pub fn radio_urls(seed_id: &str) -> AppResult<[String; 2]> {
+    if !is_valid_youtube_id(seed_id) {
+        return Err(AppError::invalid("Identifiant YouTube invalide"));
+    }
+    Ok([
+        format!("https://music.youtube.com/watch?v={seed_id}&list=RDAMVM{seed_id}"),
+        format!("https://www.youtube.com/watch?v={seed_id}&list=RD{seed_id}"),
+    ])
+}
+
 /// `https://www.youtube.com/playlist?list=<id>`, only for a valid playlist id.
 pub fn playlist_url(playlist_id: &str) -> AppResult<String> {
     let valid = (2..=64).contains(&playlist_id.len())
@@ -216,6 +228,26 @@ mod tests {
         );
         assert!(playlist_url("PL&x=1").is_err());
         assert!(playlist_url("").is_err());
+    }
+
+    #[test]
+    fn radio_urls_only_from_valid_ids() {
+        assert_eq!(
+            radio_urls("dQw4w9WgXcQ").unwrap(),
+            [
+                "https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=RDAMVMdQw4w9WgXcQ",
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ",
+            ]
+        );
+        for bad in [
+            "",
+            "abc",
+            "dQw4w9WgXcQ&list=x",
+            "dQw4w9/gXcQ",
+            "dQw4w9 gXcQ",
+        ] {
+            assert!(radio_urls(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]
