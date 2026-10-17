@@ -15,7 +15,6 @@ mod group;
 mod history;
 mod library;
 mod playlists;
-#[allow(dead_code)] // wired in the next step
 mod radio;
 mod search;
 mod sync;
@@ -95,6 +94,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             feedback::commands::get_feedback,
             feedback::commands::set_feedback,
             feedback::commands::clear_feedback,
+            radio::commands::get_radio,
             sync::commands::get_sync_settings,
             sync::commands::set_ytmusic_browser,
             sync::commands::sync_youtube_music,
@@ -208,6 +208,7 @@ pub fn run() {
             let library = Library::new(db.clone(), Some(handle.clone()));
             let history = History::new(db.clone());
             app.manage(Feedback::new(db.clone(), Some(handle.clone())));
+            app.manage(radio::Radio::new(db.clone()));
             app.manage(AudioHandle::spawn(
                 handle.clone(),
                 library.random_picker(),

@@ -78,6 +78,7 @@ export const commands = {
 	getFeedback: () => __TAURI_INVOKE<FeedbackState>("get_feedback"),
 	setFeedback: (target: FeedbackTarget, kind: FeedbackKind) => __TAURI_INVOKE<null>("set_feedback", { target, kind }),
 	clearFeedback: (target: FeedbackTarget) => __TAURI_INVOKE<null>("clear_feedback", { target }),
+	getRadio: (youtubeId: string) => __TAURI_INVOKE<RadioTrack[]>("get_radio", { youtubeId }),
 	getSyncSettings: () => __TAURI_INVOKE<SyncSettings>("get_sync_settings"),
 	setYtmusicBrowser: (browser: string) => __TAURI_INVOKE<SyncSettings>("set_ytmusic_browser", { browser }),
 	/**
@@ -285,6 +286,15 @@ export type QueueItem = {
 export type QueueState = {
 	items: QueueItem[],
 	current: number | null,
+};
+
+export type RadioTrack = {
+	/**  YouTube video id (validated). */
+	youtube_id: string,
+	title: string,
+	artist: string | null,
+	/**  Seconds, 0 when unknown. */
+	duration: number | null,
 };
 
 export type RepeatMode = "off" | 

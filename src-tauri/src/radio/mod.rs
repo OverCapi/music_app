@@ -19,6 +19,8 @@ use crate::error::{AppError, AppResult};
 use crate::search::FlatEntry;
 use crate::ytdlp;
 
+pub mod commands;
+
 /// Most tracks kept from one radio.
 pub const MAX_RADIO_TRACKS: usize = 50;
 /// A cached radio is used for 3 days.
