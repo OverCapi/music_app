@@ -43,3 +43,5 @@ Run le server et peut etre le client dans un docker
 
 - [ ] Embarquer libopus dans l'app (feature `bundled` de `symphonia-adapter-libopus`) plutôt que dépendre du paquet système.
 - [ ] Rendre configurable le chemin de yt-dlp.
+
+ecouter recement ne fonctionne pas
