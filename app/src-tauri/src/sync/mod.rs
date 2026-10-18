@@ -11,6 +11,9 @@
 //! Progress is pushed as [`SyncProgress`] events.
 
 pub mod commands;
+mod spotify;
+
+pub use spotify::SpotifyImportReport;
 
 use std::collections::HashSet;
 use std::sync::Arc;

@@ -14,7 +14,7 @@
 //! Every change emits [`LibraryChanged`] with the full list.
 
 pub mod commands;
-mod match_key;
+pub mod match_key;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -47,6 +47,8 @@ pub struct Track {
     pub added_at: i64,
     /// Set for tracks downloaded from YouTube / YouTube Music.
     pub youtube_id: Option<String>,
+    /// Favorite tracks are never removed by the storage optimizer.
+    pub favorite: bool,
 }
 
 /// A track known from another service, not downloaded yet.
@@ -73,7 +75,7 @@ pub struct Library {
     app: Option<AppHandle>,
 }
 
-const COLUMNS: &str = "id, path, title, artist, album, duration, added_at, youtube_id";
+const COLUMNS: &str = "id, path, title, artist, album, duration, added_at, youtube_id, favorite";
 const GONE: &str = "Ce titre n'est plus dans la bibliothèque";
 const NO_VIDEO: &str = "Ce titre n'a pas encore de vidéo YouTube associée";
 
@@ -266,6 +268,7 @@ impl Library {
                         duration: t.duration,
                         added_at: now_secs(),
                         youtube_id: t.youtube_id.clone(),
+                        favorite: false,
                     })?
                     .id
                 }
@@ -302,6 +305,7 @@ impl Library {
                             duration: t.duration,
                             added_at: now_secs(),
                             youtube_id: Some(youtube_id.to_owned()),
+                            favorite: false,
                         },
                         true,
                     )?
@@ -487,6 +491,28 @@ impl Library {
         )?)
     }
 
+    pub fn set_favorite(&self, id: TrackId, favorite: bool) -> AppResult<()> {
+        self.db.conn().execute(
+            "UPDATE tracks SET favorite = ?1 WHERE id = ?2",
+            params![favorite, id],
+        )?;
+        self.changed()
+    }
+
+    /// Forgets the audio file of a track that stays in the library (it is downloaded
+    /// again when played). Emits nothing: callers batch deletions then call
+    /// [`Library::notify_changed`].
+    pub fn clear_path(&self, id: TrackId) -> AppResult<()> {
+        self.db
+            .conn()
+            .execute("UPDATE tracks SET path = NULL WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    pub fn notify_changed(&self) -> AppResult<()> {
+        self.changed()
+    }
+
     /// Emits [`LibraryChanged`] with the full list.
     fn changed(&self) -> AppResult<()> {
         if let Some(app) = &self.app {
@@ -532,6 +558,7 @@ fn track_from_row(row: &Row<'_>) -> rusqlite::Result<Track> {
         duration: row.get(5)?,
         added_at: row.get(6)?,
         youtube_id: row.get(7)?,
+        favorite: row.get(8)?,
     })
 }
 
@@ -555,6 +582,7 @@ fn read_track(path: &Path) -> Result<Track, String> {
         duration: tagged.properties().duration().as_secs_f64(),
         added_at: now_secs(),
         youtube_id: None,
+        favorite: false,
     })
 }
 
@@ -604,6 +632,7 @@ pub(crate) mod tests {
             duration: 1.0,
             added_at: 1,
             youtube_id: None,
+            favorite: false,
         })
         .unwrap()
         .id

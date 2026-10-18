@@ -1,6 +1,6 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import type { Track } from "#lib/bindings.ts";
+  import { commands, type Track } from "#lib/bindings.ts";
   import { library } from "#lib/stores/library.svelte.ts";
   import { player } from "#lib/stores/player.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
@@ -89,7 +89,7 @@
       <TrackTable
         tracks={filtered}
         onplay={playFrom}
-        actionsWidth={group.isActive ? "7.5rem" : undefined}
+        actionsWidth={group.isActive ? "9.5rem" : "7.5rem"}
       >
         {#snippet actions(track)}
           {#if group.isActive && track.youtube_id}
@@ -102,6 +102,17 @@
               }}
             />
           {/if}
+          <button
+            class="row-action"
+            class:favorite={track.favorite}
+            onclick={() => attempt(() => commands.setFavorite(track.id, !track.favorite))}
+            aria-label={track.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+            title={track.favorite
+              ? "Favori : le fichier n'est jamais supprimé"
+              : "Marquer comme favori (fichier conservé)"}
+          >
+            {track.favorite ? "★" : "☆"}
+          </button>
           <EnqueueButton trackId={track.id} source="library" />
           <AddToPlaylist trackId={track.id} />
           <button

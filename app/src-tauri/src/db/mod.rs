@@ -24,6 +24,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("migrations/007_discoveries.sql")),
     M::up(include_str!("migrations/008_suggested.sql")),
     M::up(include_str!("migrations/009_live_channels.sql")),
+    M::up(include_str!("migrations/010_favorite.sql")),
 ];
 
 /// Shared handle to the database. Cheap to clone; queries are short so one

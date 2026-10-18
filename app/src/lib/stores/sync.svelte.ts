@@ -4,6 +4,7 @@ import {
   events,
   type SyncProgress,
   type SyncReport,
+  type SpotifyImportReport,
   type SyncSettings,
 } from "#lib/bindings.ts";
 import { attempt } from "#lib/stores/toasts.svelte.ts";
@@ -33,6 +34,17 @@ class Sync {
       const settings = await attempt(() => commands.getSyncSettings());
       if (settings) this.settings = settings;
     }
+  }
+
+  spotifyReport = $state<SpotifyImportReport | null>(null);
+
+  async importSpotify(path: string) {
+    this.running = true;
+    this.progress = null;
+    const report = await attempt(() => commands.importSpotifyTsv(path));
+    this.running = false;
+    this.progress = null;
+    if (report) this.spotifyReport = report;
   }
 
   async init(): Promise<UnlistenFn> {
