@@ -34,6 +34,7 @@ One Cargo workspace (root `Cargo.toml`) + one pnpm package:
 - `app/src/` — SvelteKit frontend: routes `app/src/routes/`, stores `app/src/lib/stores/*.svelte.ts`, components `app/src/lib/components/`, generated `app/src/lib/bindings.ts`.
 - `app/src-tauri/` — app backend: one module per feature (`mod.rs` logic + `commands.rs` thin `#[tauri::command]` wrappers); `db/migrations/` for SQLite.
 - `crates/server/` — listening-group server (axum); `crates/protocol/` — shared WebSocket types, its module doc is the protocol spec.
+- Lives (`app/src-tauri/src/lives/`, `audio/live.rs`): audio plays in the rodio engine through yt-dlp + ffmpeg; the video overlay is hls.js on the `live://` scheme. See `CLAUDE.md`.
 - Vite config is `app/vite.config.js` (there is **no** `svelte.config.js`). It contains a dev-only plugin that compiles a component before serving its virtual CSS; removing it breaks styling in `tauri dev`.
 
 ## Hard rules (contract)

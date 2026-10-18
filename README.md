@@ -10,6 +10,10 @@ Tauri 2 + SvelteKit 3 (Svelte 5) pour l'interface, Rust pour le backend (lecture
 - **File d'attente** : suivant / précédent, enchaînement automatique, ajout de titres. Quand la file est vide, un titre au hasard de la bibliothèque est joué.
 - **Bibliothèque** persistante (SQLite ; les anciens fichiers `library.json` / `playlists.json` / `account.json` sont importés automatiquement au premier lancement puis renommés en `.bak`), avec titre, artiste, album et durée lus dans les tags, et une recherche.
 - **Playlists** : création, renommage, suppression, ajout et retrait de titres, lecture.
+- **Accueil** : mixes générés à partir de vos goûts (Que du connu / Que du nouveau / Mélangé), découvertes de la semaine et écoutes récentes.
+- **Lives YouTube** : recherche par mot-clé, par chaîne ou par lien, chaînes favorites. Le son passe par le moteur audio ; la vidéo peut être agrandie en plein écran dans l'app (sans le son, avec un décalage de quelques secondes).
+- **Synchronisation** des titres likés et des playlists YouTube Music vers la bibliothèque (Spotify : prévu), dans les paramètres. Les titres sont téléchargés à la première lecture.
+- **Thèmes de couleurs** (Nuit, Aube, Braise, Océan, Rose) dans les paramètres.
 - **Recherche YouTube Music / YouTube** via yt-dlp, avec « Plus de résultats ».
 - **Téléchargement** en Opus, avec tags et pochette, dans `~/Music/Music App`. Le titre est ajouté automatiquement à la bibliothèque. Le supprimer de la bibliothèque met le fichier à la corbeille.
 - **Groupes d'écoute** : comptes sur un serveur et groupe rejoignable par un code (ou un lien `musicapp://join/CODE`).
