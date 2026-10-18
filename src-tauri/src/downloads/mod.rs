@@ -4,6 +4,10 @@
 //!
 //! Progress is pushed as [`DownloadProgress`] events; the library emits its own
 //! change event once the file is added. [`download`] is reused by the group client.
+//!
+//! Suggested (recommended, not kept) tracks are downloaded into a cache folder
+//! instead; liking one ([`Downloads::keep`]) moves its file into the music folder.
+//! [`Downloads::purge_suggestions`] empties the cache at startup.
 
 pub mod commands;
 
@@ -19,7 +23,7 @@ use tauri_specta::Event;
 use tokio::sync::Semaphore;
 
 use crate::error::{AppError, AppResult};
-use crate::library::Library;
+use crate::library::{Library, Track};
 use crate::ytdlp::{self, Progress};
 
 const MAX_PARALLEL: usize = 2;
@@ -51,15 +55,19 @@ pub struct DownloadProgress {
 /// Managed state.
 pub struct Downloads {
     dir: PathBuf,
+    /// Files of suggested tracks, wiped at startup.
+    cache_dir: PathBuf,
     permits: Arc<Semaphore>,
     active: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 impl Downloads {
-    /// `dir`: the app music folder (`~/Music/Music App`).
-    pub fn new(dir: PathBuf) -> Self {
+    /// `dir`: the app music folder (`~/Music/Music App`); `cache_dir`: where suggested
+    /// tracks are downloaded.
+    pub fn new(dir: PathBuf, cache_dir: PathBuf) -> Self {
         Self {
             dir,
+            cache_dir,
             permits: Arc::new(Semaphore::new(MAX_PARALLEL)),
             active: Arc::default(),
         }
@@ -91,6 +99,8 @@ impl Downloads {
                 })
                 .await
                 .and_then(|path| library.add_downloaded(&path.to_string_lossy(), &id));
+                // An explicit download means the user wants to keep the track.
+                let result = result.and_then(|track| library.promote(&id).map(|_| track));
                 match result {
                     Ok(_) => emit(&app, &id, DownloadStatus::Done, None, None),
                     Err(e) => emit(&app, &id, DownloadStatus::Error, None, Some(e.to_string())),
@@ -111,7 +121,8 @@ impl Downloads {
         library: Library,
         youtube_id: String,
     ) -> impl Future<Output = AppResult<String>> + Send + 'static {
-        let (dir, permits) = (self.dir.clone(), Arc::clone(&self.permits));
+        let (dir, cache_dir) = (self.dir.clone(), self.cache_dir.clone());
+        let permits = Arc::clone(&self.permits);
         async move {
             if let Some(path) = library
                 .find_by_youtube_id(&youtube_id)?
@@ -120,13 +131,28 @@ impl Downloads {
             {
                 return Ok(path);
             }
+            let suggested = match library.find_by_youtube_id(&youtube_id)? {
+                Some(track) => library.is_suggested(track.id)?,
+                None => false,
+            };
+            let target = if suggested { &cache_dir } else { &dir };
             emit(&app, &youtube_id, DownloadStatus::Queued, None, None);
             let _permit = permits.acquire_owned().await;
-            let result = download(&youtube_id, &dir, |status, progress| {
-                emit(&app, &youtube_id, status, progress, None)
-            })
-            .await
-            .and_then(|path| library.add_downloaded(&path.to_string_lossy(), &youtube_id));
+            let result: AppResult<Track> = async {
+                std::fs::create_dir_all(target)?;
+                let path = download(&youtube_id, target, |status, progress| {
+                    emit(&app, &youtube_id, status, progress, None)
+                })
+                .await?;
+                let mut track = library.add_downloaded(&path.to_string_lossy(), &youtube_id)?;
+                // Liked while downloading: the file belongs in the music folder.
+                if suggested && !library.is_suggested(track.id)? {
+                    move_out_of_cache(&library, &track, &dir, &cache_dir)?;
+                    track = library.get(track.id)?;
+                }
+                Ok(track)
+            }
+            .await;
             match result {
                 Ok(track) => {
                     emit(&app, &youtube_id, DownloadStatus::Done, None, None);
@@ -155,11 +181,42 @@ impl Downloads {
         // Aborting drops the yt-dlp child process, which kills it (kill_on_drop).
         task.abort();
         emit(app, youtube_id, DownloadStatus::Cancelled, None, None);
-        let (dir, id) = (self.dir.clone(), youtube_id.to_owned());
+        let (dirs, id) = (
+            [self.dir.clone(), self.cache_dir.clone()],
+            youtube_id.to_owned(),
+        );
         tauri::async_runtime::spawn(async move {
             let _ = task.await;
-            remove_partial_files(&dir, &id);
+            for dir in &dirs {
+                remove_partial_files(dir, &id);
+            }
         });
+    }
+
+    /// The user likes the track `youtube_id`: it becomes a normal library track and
+    /// its cached file, if any, moves into the music folder. No-op for a track that
+    /// is not in the library. The track is promoted even if the move fails.
+    pub fn keep(&self, library: &Library, youtube_id: &str) -> AppResult<()> {
+        let Some(track) = library.find_by_youtube_id(youtube_id)? else {
+            return Ok(());
+        };
+        let moved = move_out_of_cache(library, &track, &self.dir, &self.cache_dir);
+        library.promote(youtube_id)?;
+        moved
+    }
+
+    /// Startup cleanup: empties the suggestion cache and deletes every suggested
+    /// track that was never kept, so suggestions don't accumulate across sessions.
+    pub fn purge_suggestions(&self, library: &Library) -> AppResult<()> {
+        match std::fs::remove_dir_all(&self.cache_dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::warn!("cannot empty {}: {e}", self.cache_dir.display()),
+        }
+        for (id, _, _) in library.suggested_tracks()? {
+            library.remove_suggested(id)?;
+        }
+        Ok(())
     }
 
     /// Moves `path` to the trash if it is inside the music folder. Returns whether
@@ -176,6 +233,38 @@ impl Downloads {
             .map(|()| true)
             .map_err(|e| AppError::Io(format!("impossible de supprimer le fichier : {e}")))
     }
+}
+
+/// Moves the file of `track` into `dir` if it lives in `cache_dir` (rename, else
+/// copy + delete) and points the track at the new path.
+fn move_out_of_cache(
+    library: &Library,
+    track: &Track,
+    dir: &Path,
+    cache_dir: &Path,
+) -> AppResult<()> {
+    let Some(path) = track.path.as_deref().map(Path::new) else {
+        return Ok(());
+    };
+    if !path.starts_with(cache_dir) || !path.is_file() {
+        return Ok(());
+    }
+    let io = |e: std::io::Error| AppError::Io(format!("impossible de conserver le fichier : {e}"));
+    let name = path
+        .file_name()
+        .ok_or_else(|| AppError::Io("nom de fichier invalide".into()))?;
+    std::fs::create_dir_all(dir).map_err(io)?;
+    let dest = dir.join(name);
+    if dest.exists() {
+        // Already in the music folder: just drop the cached copy.
+        std::fs::remove_file(path).map_err(io)?;
+    } else if std::fs::rename(path, &dest).is_err() {
+        std::fs::copy(path, &dest).map_err(io)?;
+        if let Err(e) = std::fs::remove_file(path) {
+            tracing::warn!("cannot remove {}: {e}", path.display());
+        }
+    }
+    library.set_path(track.id, &dest.to_string_lossy())
 }
 
 /// Downloads `youtube_id` as Opus into `dir`, retrying once, reporting progress
@@ -247,4 +336,86 @@ fn emit(
         error,
     }
     .emit(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Db;
+    use crate::library::RemoteTrack;
+    use crate::library::tests::temp_dir;
+
+    const ID: &str = "aaaaaaaaaaa";
+
+    fn suggest(lib: &Library, id: &str) -> Track {
+        let ids = lib
+            .add_suggested(&[RemoteTrack {
+                title: id.into(),
+                artist: None,
+                album: None,
+                duration: 1.0,
+                youtube_id: Some(id.into()),
+            }])
+            .unwrap();
+        lib.get(ids[0]).unwrap()
+    }
+
+    fn setup() -> (Downloads, Library, PathBuf, PathBuf) {
+        let root = temp_dir("downloads");
+        let (music, cache) = (root.join("music"), root.join("cache"));
+        std::fs::create_dir_all(&cache).unwrap();
+        (
+            Downloads::new(music.clone(), cache.clone()),
+            Library::new(Db::in_memory(), None),
+            music,
+            cache,
+        )
+    }
+
+    #[test]
+    fn keep_moves_cached_file_and_promotes() {
+        let (downloads, lib, music, cache) = setup();
+        let track = suggest(&lib, ID);
+        let cached = cache.join("Song [aaaaaaaaaaa].opus");
+        std::fs::write(&cached, b"audio").unwrap();
+        lib.set_path(track.id, &cached.to_string_lossy()).unwrap();
+
+        downloads.keep(&lib, ID).unwrap();
+
+        let kept = music.join("Song [aaaaaaaaaaa].opus");
+        assert!(kept.is_file() && !cached.exists());
+        assert!(!lib.is_suggested(track.id).unwrap());
+        let tracks = lib.tracks().unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].path.as_deref(), Some(&*kept.to_string_lossy()));
+    }
+
+    #[test]
+    fn keep_promotes_a_track_without_file_and_ignores_unknown_ones() {
+        let (downloads, lib, music, _) = setup();
+        let track = suggest(&lib, ID);
+        downloads.keep(&lib, ID).unwrap();
+        downloads.keep(&lib, "bbbbbbbbbbb").unwrap();
+        assert_eq!(lib.tracks().unwrap().len(), 1);
+        assert!(lib.get(track.id).unwrap().path.is_none());
+        assert!(!music.exists());
+    }
+
+    #[test]
+    fn purge_removes_unkept_suggestions_and_the_cache() {
+        let (downloads, lib, _, cache) = setup();
+        let dropped = suggest(&lib, ID);
+        let kept = suggest(&lib, "bbbbbbbbbbb");
+        let normal = crate::library::tests::insert_track(&lib, "/a.opus");
+        std::fs::write(cache.join("x.opus"), b"audio").unwrap();
+        lib.promote("bbbbbbbbbbb").unwrap();
+
+        downloads.purge_suggestions(&lib).unwrap();
+
+        assert!(!cache.exists());
+        assert!(lib.get(dropped.id).is_err());
+        assert!(lib.get(kept.id).is_ok());
+        assert!(lib.get(normal).is_ok());
+        assert!(lib.suggested_tracks().unwrap().is_empty());
+    }
 }

@@ -11,6 +11,12 @@ export const commands = {
 	 */
 	playQueue: (trackIds: number[], start: number, source: PlaySource) => __TAURI_INVOKE<null>("play_queue", { trackIds, start, source }),
 	enqueue: (trackIds: number[], source: PlaySource) => __TAURI_INVOKE<null>("enqueue", { trackIds, source }),
+	/**
+	 *  Replaces the queue with recommended tracks (a mix, the discoveries) and plays
+	 *  `tracks[start]`. The tracks are not added to the library: they are downloaded
+	 *  into a cache when played and forgotten unless the user likes them.
+	 */
+	playSuggestions: (tracks: SuggestedTrack[], start: number) => __TAURI_INVOKE<null>("play_suggestions", { tracks, start }),
 	playIndex: (index: number) => __TAURI_INVOKE<null>("play_index", { index }),
 	removeFromQueue: (index: number) => __TAURI_INVOKE<null>("remove_from_queue", { index }),
 	clearQueue: () => __TAURI_INVOKE<null>("clear_queue"),
@@ -250,7 +256,9 @@ export type Play = {
 /**  Where a listen came from. */
 export type PlaySource = "library" | "playlist" | 
 /**  Random track picked because the queue ran out. */
-"autoplay" | "group";
+"autoplay" | "group" | 
+/**  Listen started from a generated mix or from the discoveries. */
+"mix";
 
 export type Playback = { status: "idle" } | { status: "preparing"; deadline_ms: number } | { status: "playing"; position: number | null; at_ms: number } | { status: "paused"; position: number | null };
 
@@ -370,6 +378,15 @@ export type SearchResult = {
 	views: number | null,
 	/**  True while artist/album/duration are still being fetched (YouTube Music). */
 	details_pending: boolean,
+};
+
+/**  A recommended track as sent by the frontend (a `MixTrack` fits). */
+export type SuggestedTrack = {
+	youtube_id: string,
+	title: string,
+	artist: string | null,
+	/**  Seconds, 0 when unknown. */
+	duration: number | null,
 };
 
 export type SyncProgress = {

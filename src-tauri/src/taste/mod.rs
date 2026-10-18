@@ -65,7 +65,7 @@ fn source_weight(source: PlaySource) -> f64 {
     match source {
         PlaySource::Group => GROUP_WEIGHT,
         PlaySource::Autoplay => AUTOPLAY_WEIGHT,
-        PlaySource::Library | PlaySource::Playlist => DEFAULT_WEIGHT,
+        PlaySource::Library | PlaySource::Playlist | PlaySource::Mix => DEFAULT_WEIGHT,
     }
 }
 

@@ -6,6 +6,11 @@
 //! and title) recognizes the same song coming from elsewhere, so imports from
 //! several services don't create duplicates.
 //!
+//! Tracks recommended by the app that the user has not kept are "suggested": rows
+//! with `suggested = 1`, hidden from [`Library::tracks`], autoplay and matching, but
+//! still resolvable by id and YouTube id so they can be queued and listened to.
+//! Liking one [`promote`](Library::promote)s it into a normal library track.
+//!
 //! Every change emits [`LibraryChanged`] with the full list.
 
 pub mod commands;
@@ -78,11 +83,12 @@ impl Library {
         Self { db, app }
     }
 
-    /// All tracks, most recently added first.
+    /// All library tracks (suggested ones excluded), most recently added first.
     pub fn tracks(&self) -> AppResult<Vec<Track>> {
         let conn = self.db.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM tracks ORDER BY added_at DESC, id DESC"
+            "SELECT {COLUMNS} FROM tracks WHERE suggested = 0
+             ORDER BY added_at DESC, id DESC"
         ))?;
         let tracks = stmt
             .query_map([], track_from_row)?
@@ -233,6 +239,13 @@ impl Library {
             };
             let id = match existing {
                 Some(track) => {
+                    if self.is_suggested(track.id)? {
+                        // Explicitly added: the suggestion becomes a library track.
+                        self.db
+                            .conn()
+                            .execute("UPDATE tracks SET suggested = 0 WHERE id = ?1", [track.id])?;
+                        added = true;
+                    }
                     if track.youtube_id.is_none() && t.youtube_id.is_some() {
                         self.db.conn().execute(
                             "UPDATE tracks SET youtube_id = ?1 WHERE id = ?2",
@@ -265,7 +278,110 @@ impl Library {
         Ok(ids)
     }
 
-    /// Library tracks with the same [`match_key`] and a close duration.
+    /// Adds recommended tracks as hidden "suggested" rows (no file), reusing the row
+    /// with the same YouTube id (library or suggested). Every entry needs a valid
+    /// YouTube id. Returns the track id of each entry, in order. Emits nothing: the
+    /// library list does not change.
+    pub fn add_suggested(&self, tracks: &[RemoteTrack]) -> AppResult<Vec<TrackId>> {
+        let mut ids = Vec::with_capacity(tracks.len());
+        for t in tracks {
+            let Some(youtube_id) = t.youtube_id.as_deref().filter(|y| is_valid_youtube_id(y))
+            else {
+                return Err(AppError::invalid("Identifiant YouTube invalide"));
+            };
+            let id = match self.find_by_youtube_id(youtube_id)? {
+                Some(track) => track.id,
+                None => {
+                    self.insert_with(
+                        Track {
+                            id: 0,
+                            path: None,
+                            title: t.title.clone(),
+                            artist: t.artist.clone(),
+                            album: t.album.clone(),
+                            duration: t.duration,
+                            added_at: now_secs(),
+                            youtube_id: Some(youtube_id.to_owned()),
+                        },
+                        true,
+                    )?
+                    .id
+                }
+            };
+            ids.push(id);
+        }
+        Ok(ids)
+    }
+
+    /// Points the track at another file (e.g. after moving it out of the suggestion
+    /// cache). Emits nothing: callers [`promote`](Library::promote) right after, or
+    /// the track is hidden anyway.
+    pub fn set_path(&self, id: TrackId, path: &str) -> AppResult<()> {
+        self.db.conn().execute(
+            "UPDATE tracks SET path = ?1 WHERE id = ?2",
+            params![path, id],
+        )?;
+        Ok(())
+    }
+
+    /// Whether the track is a hidden suggestion (false for unknown ids).
+    pub fn is_suggested(&self, id: TrackId) -> AppResult<bool> {
+        Ok(self
+            .db
+            .conn()
+            .query_row("SELECT suggested FROM tracks WHERE id = ?1", [id], |row| {
+                row.get::<_, bool>(0)
+            })
+            .optional()?
+            .unwrap_or(false))
+    }
+
+    /// Turns a suggested track into a normal library track (the file, if any, is the
+    /// caller's business). `None` when no suggested track has this YouTube id.
+    pub fn promote(&self, youtube_id: &str) -> AppResult<Option<Track>> {
+        let track = self
+            .db
+            .conn()
+            .query_row(
+                &format!(
+                    "UPDATE tracks SET suggested = 0 WHERE youtube_id = ?1 AND suggested = 1
+                     RETURNING {COLUMNS}"
+                ),
+                [youtube_id],
+                track_from_row,
+            )
+            .optional()?;
+        if track.is_some() {
+            self.changed()?;
+        }
+        Ok(track)
+    }
+
+    /// Every suggested track: (id, YouTube id, cached file path if downloaded).
+    pub fn suggested_tracks(&self) -> AppResult<Vec<(TrackId, String, Option<String>)>> {
+        let conn = self.db.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, youtube_id, path FROM tracks
+             WHERE suggested = 1 AND youtube_id IS NOT NULL ORDER BY id",
+        )?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<_, _>>()?;
+        Ok(rows)
+    }
+
+    /// Deletes a suggested row (plays keep their own copy of title and artist;
+    /// playlist entries cascade). Does nothing for a library track. Returns whether
+    /// a row was removed.
+    pub fn remove_suggested(&self, id: TrackId) -> AppResult<bool> {
+        Ok(self
+            .db
+            .conn()
+            .execute("DELETE FROM tracks WHERE id = ?1 AND suggested = 1", [id])?
+            > 0)
+    }
+
+    /// Library tracks (not suggested) with the same [`match_key`] and a close duration.
     pub fn find_similar(
         &self,
         artist: Option<&str>,
@@ -277,7 +393,7 @@ impl Library {
         };
         let conn = self.db.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM tracks WHERE match_key = ?1 ORDER BY id"
+            "SELECT {COLUMNS} FROM tracks WHERE match_key = ?1 AND suggested = 0 ORDER BY id"
         ))?;
         let tracks = stmt
             .query_map([key], track_from_row)?
@@ -319,7 +435,7 @@ impl Library {
             // `id IS ?1` sorts the avoided track last, so it is only picked when alone.
             db.conn()
                 .query_row(
-                    "SELECT id, path, youtube_id FROM tracks WHERE path IS NOT NULL
+                    "SELECT id, path, youtube_id FROM tracks WHERE path IS NOT NULL AND suggested = 0
                      ORDER BY id IS ?1, random() LIMIT 1",
                     [avoid],
                     |row| {
@@ -341,11 +457,15 @@ impl Library {
 
     /// Inserts a track (`id` ignored); a known path is updated in place and keeps its id.
     fn insert(&self, t: Track) -> AppResult<Track> {
+        self.insert_with(t, false)
+    }
+
+    fn insert_with(&self, t: Track, suggested: bool) -> AppResult<Track> {
         Ok(self.db.conn().query_row(
             &format!(
                 "INSERT INTO tracks (path, title, artist, album, duration, added_at,
-                     youtube_id, match_key)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                     youtube_id, match_key, suggested)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT (path) DO UPDATE SET title = excluded.title,
                      artist = excluded.artist, album = excluded.album,
                      duration = excluded.duration, added_at = excluded.added_at,
@@ -360,7 +480,8 @@ impl Library {
                 t.duration,
                 t.added_at,
                 t.youtube_id,
-                match_key::match_key(t.artist.as_deref(), &t.title)
+                match_key::match_key(t.artist.as_deref(), &t.title),
+                suggested
             ],
             track_from_row,
         )?)
@@ -664,5 +785,122 @@ pub(crate) mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn suggested_tracks_are_hidden_but_resolvable() {
+        let lib = Library::new(Db::in_memory(), None);
+        let kept = lib
+            .add_remote(&[remote("Kept", "A", 100.0, Some("kkkkkkkkkkk"))])
+            .unwrap()[0];
+        let ids = lib
+            .add_suggested(&[
+                remote("Kept", "A", 100.0, Some("kkkkkkkkkkk")),
+                remote("Sugg", "B", 200.0, Some("sssssssssss")),
+                remote("Sugg", "B", 200.0, Some("sssssssssss")),
+            ])
+            .unwrap();
+        // Deduplicated against the library track and against itself.
+        assert_eq!(ids[0], kept);
+        assert_eq!(ids[1], ids[2]);
+        let s = ids[1];
+        assert!(!lib.is_suggested(kept).unwrap());
+        assert!(lib.is_suggested(s).unwrap());
+        assert!(lib.add_suggested(&[remote("X", "Y", 1.0, None)]).is_err());
+
+        // Hidden from the library, matching and autoplay...
+        assert_eq!(lib.tracks().unwrap().len(), 1);
+        assert!(
+            lib.find_similar(Some("B"), "Sugg", 200.0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(lib.random_picker()(None).is_none());
+        // ...but still resolvable.
+        assert_eq!(lib.get(s).unwrap().title, "Sugg");
+        assert_eq!(
+            lib.find_by_youtube_id("sssssssssss").unwrap().unwrap().id,
+            s
+        );
+        let item = &lib.queue_items(&[s], PlaySource::Mix).unwrap()[0];
+        assert_eq!(item.youtube_id.as_deref(), Some("sssssssssss"));
+        assert_eq!(item.source, PlaySource::Mix);
+        assert_eq!(
+            lib.suggested_tracks().unwrap(),
+            vec![(s, "sssssssssss".to_owned(), None)]
+        );
+    }
+
+    #[test]
+    fn download_keeps_the_suggested_flag_and_promote_shows_the_track() {
+        let dir = temp_dir("suggested");
+        let wav = dir.join("Sugg.wav");
+        write_wav(&wav);
+        let wav = wav.to_string_lossy().into_owned();
+        let lib = Library::new(Db::in_memory(), None);
+        let s = lib
+            .add_suggested(&[remote("Sugg", "B", 200.0, Some("sssssssssss"))])
+            .unwrap()[0];
+
+        let downloaded = lib.add_downloaded(&wav, "sssssssssss").unwrap();
+        assert_eq!(downloaded.id, s);
+        assert!(lib.is_suggested(s).unwrap());
+        assert!(lib.tracks().unwrap().is_empty());
+        assert!(lib.random_picker()(None).is_none());
+        assert_eq!(
+            lib.suggested_tracks().unwrap(),
+            vec![(s, "sssssssssss".to_owned(), Some(wav))]
+        );
+
+        assert!(lib.promote("zzzzzzzzzzz").unwrap().is_none());
+        assert_eq!(lib.promote("sssssssssss").unwrap().unwrap().id, s);
+        assert!(!lib.is_suggested(s).unwrap());
+        assert_eq!(lib.tracks().unwrap().len(), 1);
+        assert_eq!(lib.random_picker()(None).unwrap().track_id, s);
+        assert!(lib.suggested_tracks().unwrap().is_empty());
+        // Only suggestions can be removed this way.
+        assert!(!lib.remove_suggested(s).unwrap());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn add_remote_promotes_a_suggestion() {
+        let lib = Library::new(Db::in_memory(), None);
+        let s = lib
+            .add_suggested(&[remote("Sugg", "B", 200.0, Some("sssssssssss"))])
+            .unwrap()[0];
+        let ids = lib
+            .add_remote(&[remote("Sugg", "B", 200.0, Some("sssssssssss"))])
+            .unwrap();
+        assert_eq!(ids, vec![s]);
+        assert!(!lib.is_suggested(s).unwrap());
+        assert_eq!(lib.tracks().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn remove_suggested_keeps_plays() {
+        use crate::history::{History, PlayedTrack};
+        let db = Db::in_memory();
+        let lib = Library::new(db.clone(), None);
+        let history = History::new(db);
+        let s = lib
+            .add_suggested(&[remote("Sugg", "B", 200.0, Some("sssssssssss"))])
+            .unwrap()[0];
+        history.recorder()(crate::history::FinishedPlay {
+            track: PlayedTrack::Library(s),
+            source: PlaySource::Mix,
+            started_at: 1,
+            listened: 30.0,
+            duration: 200.0,
+            completed: false,
+        });
+        assert!(lib.remove_suggested(s).unwrap());
+        assert!(lib.get(s).is_err());
+        assert!(lib.suggested_tracks().unwrap().is_empty());
+        let plays = history.recent(10).unwrap();
+        assert_eq!(plays.len(), 1);
+        assert_eq!(plays[0].title, "Sugg");
+        assert_eq!(plays[0].track_id, None);
+        assert!(!lib.remove_suggested(s).unwrap());
     }
 }
