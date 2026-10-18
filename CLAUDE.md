@@ -32,7 +32,7 @@ cargo test -p music-group-server --test api <name>   # single server integration
 cargo run -p music-group-server   # env: MUSIC_SERVER_ADDR (127.0.0.1:8787), MUSIC_SERVER_DB (./server.db), MUSIC_SERVER_READY_TIMEOUT_MS (30000)
 ```
 
-`tauri::generate_context!` needs the `build/` folder to exist (`mkdir -p build`) for cargo commands on a fresh checkout. CI (`.github/workflows/ci.yml`) runs all of the above.
+`tauri::generate_context!` needs the `build/` folder to exist (`mkdir -p build`) for cargo commands on a fresh checkout.
 
 Second app instance for testing groups (uses the first instance's Vite dev server, needs a built debug binary):
 `MUSIC_APP_PROFILE=b target/debug/music_app` — the profile gets separate data/cache dirs (`<data>/profiles/b`).

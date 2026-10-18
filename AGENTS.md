@@ -20,7 +20,7 @@ cargo test --workspace         # also regenerates app/src/lib/bindings.ts
 cargo run -p music-group-server   # env: MUSIC_SERVER_ADDR (127.0.0.1:8787), MUSIC_SERVER_DB (./server.db)
 ```
 
-- Verification order (matches CI, `.github/workflows/ci.yml`): `pnpm check && pnpm lint && pnpm build` and, separately, `cargo fmt --check && cargo clippy ... && cargo test --workspace`.
+- Verification order: `pnpm check && pnpm lint && pnpm build` and, separately, `cargo fmt --check && cargo clippy ... && cargo test --workspace`.
 - Single Rust test: `cargo test -p <crate> <test_name>`; server integration tests live in `crates/server/tests/api.rs` (`cargo test -p music-group-server --test api`).
 - **`tauri::generate_context!` needs a `build/` folder**: on a fresh checkout run `mkdir -p build` before any cargo command (CI does this too).
 - Second app instance for testing groups: `MUSIC_APP_PROFILE=b target/debug/music_app` — uses the first instance's Vite dev server, which must stay open; profile gets separate data/cache dirs.

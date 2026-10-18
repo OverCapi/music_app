@@ -1,0 +1,8 @@
+target
+**/node_modules
+.git
+.claude
+.svelte-kit
+app/build
+graphify-out
+*.db*

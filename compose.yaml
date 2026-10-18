@@ -1,0 +1,11 @@
+services:
+  server:
+    build: .
+    ports:
+      - "8787:8787"
+    volumes:
+      - server-data:/data
+    restart: unless-stopped
+
+volumes:
+  server-data:

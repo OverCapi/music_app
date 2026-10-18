@@ -45,6 +45,14 @@ Lancer le serveur :
 cargo run -p music-group-server   # écoute sur 127.0.0.1:8787
 ```
 
+Ou sur un serveur, avec Docker (écoute sur `0.0.0.0:8787`, base SQLite dans le volume `server-data`) :
+
+```sh
+docker compose up -d
+```
+
+Le serveur est indépendant de l'app : les clients saisissent son adresse dans « Groupe d'écoute ». Pour l'exposer sur Internet, le placer derrière un reverse proxy HTTPS (Caddy, nginx…).
+
 Variables d'environnement du serveur :
 
 | Variable | Défaut | Rôle |
