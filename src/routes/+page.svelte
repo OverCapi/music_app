@@ -1,141 +1,203 @@
 <script lang="ts">
-  import { open } from "@tauri-apps/plugin-dialog";
-  import type { Track } from "#lib/bindings.ts";
-  import { library } from "#lib/stores/library.svelte.ts";
-  import { player } from "#lib/stores/player.svelte.ts";
-  import { group } from "#lib/stores/group.svelte.ts";
-  import { attempt } from "#lib/stores/toasts.svelte.ts";
-  import { formatTotal, plural } from "#lib/format.ts";
-  import TrackCollection from "#lib/components/ui/TrackCollection.svelte";
-  import TrackTable from "#lib/components/ui/TrackTable.svelte";
-  import EnqueueButton from "#lib/components/library/EnqueueButton.svelte";
-  import AddToPlaylist from "#lib/components/playlists/AddToPlaylist.svelte";
-  import AddToGroup from "#lib/components/group/AddToGroup.svelte";
+  import { onMount } from "svelte";
+  import type { Mix, MixCategory } from "#lib/bindings.ts";
+  import { home } from "#lib/stores/home.svelte.ts";
+  import { plural } from "#lib/format.ts";
+  import Icon from "#lib/components/ui/Icon.svelte";
+  import PlayHeader from "#lib/components/home/PlayHeader.svelte";
+  import SuggestionList from "#lib/components/home/SuggestionList.svelte";
 
-  let query = $state("");
+  const categories: { id: MixCategory; label: string }[] = [
+    { id: "known", label: "Que du connu" },
+    { id: "new", label: "Que du nouveau" },
+    { id: "mixed", label: "Mélangé" },
+  ];
 
-  const filtered = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return library.tracks;
-    return library.tracks.filter((t) =>
-      [t.title, t.artist, t.album].some((field) => field?.toLowerCase().includes(q)),
-    );
+  let selectedId = $state<string | null>(null);
+
+  const groups = $derived(
+    categories
+      .map((c) => ({ ...c, mixes: home.mixes.filter((m) => m.category === c.id) }))
+      .filter((g) => g.mixes.length > 0),
+  );
+  const selected = $derived(home.mixes.find((m) => m.id === selectedId) ?? null);
+  const discoveries = $derived(home.discoveries?.tracks ?? []);
+  // Group tracks and tracks without a YouTube id cannot be replayed from here.
+  const playable = $derived(
+    home.recent.flatMap((p) =>
+      p.youtube_id
+        ? [
+            {
+              youtube_id: p.youtube_id,
+              title: p.title,
+              artist: p.artist,
+              duration: null,
+              known: true,
+            },
+          ]
+        : [],
+    ),
+  );
+
+  onMount(() => {
+    home.load();
+    home.loadRecent();
   });
 
-  const totalDuration = $derived(library.tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0));
-  const notDownloaded = $derived(library.tracks.filter((t) => t.path === null).length);
-
-  async function addFiles() {
-    const paths = await attempt(() =>
-      open({ multiple: true, filters: [{ name: "Audio", extensions: ["mp3", "opus"] }] }),
-    );
-    if (paths && paths.length > 0) await library.add(paths);
-  }
-
-  /** Plays the visible list (like a Spotify playlist), starting at `index`. */
-  function playFrom(index: number) {
-    player.playFrom(filtered, index, "library");
-  }
-
-  /** Plays the whole visible list; with shuffle on, from a random track. */
-  function playAll() {
-    playFrom(player.state.shuffle ? Math.floor(Math.random() * filtered.length) : 0);
-  }
-
-  // Only files in the app's music folder (downloads) are deleted; the backend checks.
-  function removeLabel(track: Track): string {
-    return track.youtube_id && track.path
-      ? "Supprimer (le fichier est mis à la corbeille)"
-      : "Retirer de la bibliothèque";
-  }
-
-  async function removeTrack(track: Track) {
-    if (player.state.track_id === track.id) await player.stop();
-    await library.remove(track.id);
+  function toggle(mix: Mix) {
+    selectedId = selectedId === mix.id ? null : mix.id;
   }
 </script>
 
 <section class="view">
-  <TrackCollection
-    kind="Bibliothèque"
-    name="Bibliothèque"
-    meta={plural(library.tracks.length, "titre") +
-      (library.tracks.length > 0 ? ` · ${formatTotal(totalDuration)}` : "") +
-      (notDownloaded > 0 ? ` · ${notDownloaded} à télécharger à l'écoute` : "")}
-    icon="library"
-    playLabel="Lire la bibliothèque"
-    playDisabled={filtered.length === 0}
-    onplay={playAll}
-  >
-    {#snippet toolbar()}
-      {#if library.tracks.length > 0}
-        <input class="search" type="search" placeholder="Rechercher" bind:value={query} />
-      {/if}
-      <button class="pill primary" onclick={addFiles} disabled={library.adding}>
-        {library.adding ? "Ajout…" : "Ajouter des titres"}
-      </button>
-    {/snippet}
+  <h1>Accueil</h1>
 
-    {#if library.tracks.length === 0}
-      <div class="empty">
-        <p>Ta bibliothèque est vide.</p>
-        <p class="muted">Ajoute des fichiers mp3 pour commencer.</p>
-      </div>
-    {:else if filtered.length === 0}
-      <div class="empty">
-        <p class="muted">Aucun résultat pour « {query} ».</p>
-      </div>
-    {:else}
-      <TrackTable
-        tracks={filtered}
-        onplay={playFrom}
-        actionsWidth={group.isActive ? "7.5rem" : undefined}
+  <div class="shelf">
+    <PlayHeader title="Tes mix">
+      <button
+        class="pill secondary"
+        onclick={() => home.load(true)}
+        disabled={home.loadingMixes || home.loadingDiscoveries}
       >
-        {#snippet actions(track)}
-          {#if group.isActive && track.youtube_id}
-            <AddToGroup
-              entry={{
-                youtubeId: track.youtube_id,
-                title: track.title,
-                artist: track.artist,
-                duration: track.duration || null,
-              }}
-            />
-          {/if}
-          <EnqueueButton trackId={track.id} source="library" />
-          <AddToPlaylist trackId={track.id} />
-          <button
-            class="row-action"
-            onclick={() => removeTrack(track)}
-            aria-label={removeLabel(track)}
-            title={removeLabel(track)}
-          >
-            ✕
-          </button>
-        {/snippet}
-      </TrackTable>
+        Actualiser
+      </button>
+    </PlayHeader>
+
+    {#if home.loadingMixes && home.mixes.length === 0}
+      <p class="status">Préparation de tes mix…</p>
+    {:else if groups.length === 0}
+      <p class="status">Écoute quelques titres pour que je te propose des mix.</p>
+    {:else}
+      {#each groups as group (group.id)}
+        <p class="section-title">{group.label}</p>
+        <div class="cards">
+          {#each group.mixes as mix (mix.id)}
+            <button
+              class="card mix"
+              class:selected={mix.id === selectedId}
+              onclick={() => toggle(mix)}
+              aria-pressed={mix.id === selectedId}
+            >
+              <span class="cover" data-category={mix.category}><Icon name="note" size={40} /></span>
+              <span class="mix-title">{mix.title}</span>
+              <span class="muted count">{plural(mix.tracks.length, "titre")}</span>
+            </button>
+          {/each}
+        </div>
+      {/each}
+
+      {#if selected}
+        <div class="detail">
+          <PlayHeader
+            title={selected.title}
+            playLabel="Lire ce mix"
+            onplay={() => home.play(selected.tracks, 0)}
+          />
+          <SuggestionList tracks={selected.tracks} onplay={(i) => home.play(selected.tracks, i)} />
+        </div>
+      {/if}
     {/if}
-  </TrackCollection>
+  </div>
+
+  <div class="shelf">
+    <PlayHeader
+      title="Découvertes de la semaine"
+      playLabel="Lire les découvertes"
+      playDisabled={discoveries.length === 0}
+      onplay={() => home.play(discoveries, 0)}
+    >
+      <button
+        class="pill secondary"
+        onclick={() => home.refreshDiscoveries()}
+        disabled={home.loadingDiscoveries}
+      >
+        Régénérer
+      </button>
+    </PlayHeader>
+    {#if home.loadingDiscoveries && discoveries.length === 0}
+      <p class="status">Préparation de tes découvertes…</p>
+    {:else if discoveries.length === 0}
+      <p class="status">Écoute quelques titres pour que je te propose des découvertes.</p>
+    {:else}
+      <SuggestionList tracks={discoveries} onplay={(i) => home.play(discoveries, i)} />
+    {/if}
+  </div>
+
+  <div class="shelf">
+    <PlayHeader title="Écoutés récemment" />
+    {#if playable.length === 0}
+      <p class="status">Rien d'écouté pour l'instant.</p>
+    {:else}
+      <SuggestionList tracks={playable} showKnown={false} onplay={(i) => home.play(playable, i)} />
+    {/if}
+  </div>
 </section>
 
 <style>
-  .search {
-    width: 200px;
-    padding: 0.5rem 0.9rem;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    background: var(--surface-2);
+  .shelf {
+    margin-top: 2rem;
+  }
+
+  .shelf:first-of-type {
+    margin-top: 1.5rem;
+  }
+
+  .status {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1rem;
+  }
+
+  .mix {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1rem;
     color: var(--text);
-    font: inherit;
-    font-size: 0.85rem;
-    outline: none;
+    text-align: left;
   }
 
-  .search:focus {
-    border-color: var(--muted);
+  .mix:hover,
+  .mix.selected {
+    background: var(--surface-2);
   }
 
-  .empty {
-    padding: 4rem 0;
+  .cover {
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1;
+    margin-bottom: 0.5rem;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #450af5, #8e8ee5);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+    color: rgb(255 255 255 / 0.85);
+  }
+
+  .cover[data-category="known"] {
+    background: linear-gradient(135deg, #0d7377, #14a085);
+  }
+
+  .cover[data-category="new"] {
+    background: linear-gradient(135deg, #c2185b, #ff7043);
+  }
+
+  .mix-title {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .count {
+    font-size: 0.8rem;
+  }
+
+  .detail {
+    margin-top: 1.5rem;
   }
 </style>
