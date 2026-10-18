@@ -8,7 +8,8 @@
   import Icon from "#lib/components/ui/Icon.svelte";
 
   const items = [
-    { href: resolve("/"), label: "Bibliothèque", icon: "library" },
+    { href: resolve("/"), label: "Accueil", icon: "home" },
+    { href: resolve("/library"), label: "Bibliothèque", icon: "library" },
     { href: resolve("/search"), label: "Rechercher", icon: "search" },
     { href: resolve("/group"), label: "Groupe d'écoute", icon: "group" },
     { href: resolve("/sync"), label: "Synchronisation", icon: "sync" },

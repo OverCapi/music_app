@@ -1,10 +1,21 @@
 <script lang="ts">
   import { search } from "#lib/stores/search.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
+  import { home } from "#lib/stores/home.svelte.ts";
   import { formatTime, formatViews } from "#lib/format.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
   import DownloadButton from "#lib/components/search/DownloadButton.svelte";
   import AddToGroup from "#lib/components/group/AddToGroup.svelte";
+  import PlayHeader from "#lib/components/home/PlayHeader.svelte";
+  import SuggestionList from "#lib/components/home/SuggestionList.svelte";
+
+  const discoveries = $derived(home.discoveries?.tracks ?? []);
+  const showDiscoveries = $derived(!search.lastQuery && !search.query.trim());
+
+  // Discoveries are loaded lazily, only once the idle search page needs them.
+  $effect(() => {
+    if (showDiscoveries) home.loadDiscoveries();
+  });
 
   function onsubmit(e: SubmitEvent) {
     e.preventDefault();
@@ -33,6 +44,17 @@
     <p class="status">Aucun résultat pour « {search.lastQuery} ».</p>
   {:else if !search.lastQuery}
     <p class="status">Appuie sur Entrée pour chercher sur YouTube et YouTube Music.</p>
+  {/if}
+
+  {#if showDiscoveries && discoveries.length > 0}
+    <div class="discoveries">
+      <PlayHeader
+        title="Découvertes de la semaine"
+        playLabel="Lire les découvertes"
+        onplay={() => home.play(discoveries, 0)}
+      />
+      <SuggestionList tracks={discoveries} onplay={(i) => home.play(discoveries, i)} />
+    </div>
   {/if}
 
   {#if search.results.length > 0}
@@ -157,6 +179,10 @@
   .more button:not(:disabled):hover {
     border-color: var(--text);
     transform: scale(1.04);
+  }
+
+  .discoveries {
+    margin-top: 2rem;
   }
 
   .status {

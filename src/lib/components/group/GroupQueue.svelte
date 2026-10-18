@@ -19,7 +19,7 @@
       Ajoute des titres depuis
       <a href={resolve("/search")}>Rechercher</a>
       ou depuis les titres de ta
-      <a href={resolve("/")}>bibliothèque</a>
+      <a href={resolve("/library")}>bibliothèque</a>
       téléchargés depuis YouTube.
     </p>
   </div>
