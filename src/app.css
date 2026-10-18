@@ -1,21 +1,123 @@
-:root {
-  --bg: #121212;
-  --surface: #181818;
-  --surface-2: #282828;
-  --surface-3: #3e3e3e;
-  --text: #fff;
-  --muted: #b3b3b3;
-  --accent: #1db954;
-  --track: #4d4d4d;
-  --danger: #f15e6c;
-  --warning: #f59b23;
+/* Design tokens. "nuit" is the default theme; every other theme overrides the colors under
+   `[data-theme="<id>"]` (set on <html> by the theme store, or on a swatch to preview it).
+   Theme ids are listed in `src/lib/stores/theme.svelte.ts`. */
+:root,
+[data-theme="nuit"] {
+  --bg: #0e1020;
+  --surface: #161a30;
+  --surface-2: #1f2440;
+  --surface-3: #2c3256;
+  --line: #2a3055;
+  --text: #f2f3ff;
+  --muted: #a3a8cc;
+  --accent: #7c7bff;
+  --on-accent: #0e1020;
+  --accent-soft: #7c7bff29;
+  /* Warm second hue: likes, now-playing equalizer, live dots. Never body text. */
+  --coral: #ff8a5c;
+  --mint: #4fd1a5;
+  --warning: #ffc857;
+  --danger: #ff4d6d;
+  --track: #5a63a0;
+  --shadow-float: 0 12px 40px rgb(5 6 20 / 0.55);
+  --shadow-cover: 0 8px 24px rgb(5 6 20 / 0.45);
   color-scheme: dark;
+}
+
+[data-theme="aube"] {
+  --bg: #f4f3fb;
+  --surface: #ffffff;
+  --surface-2: #ebeaf6;
+  --surface-3: #dcdaf0;
+  --line: #e0def0;
+  --text: #17182b;
+  --muted: #5b5e7a;
+  --accent: #5a54e8;
+  --on-accent: #ffffff;
+  --accent-soft: #5a54e81f;
+  --coral: #e0602f;
+  --mint: #138a63;
+  --warning: #a86b00;
+  --danger: #d6284a;
+  --track: #b9b8d6;
+  --shadow-float: 0 12px 40px rgb(40 38 90 / 0.16);
+  --shadow-cover: 0 8px 24px rgb(40 38 90 / 0.18);
+  color-scheme: light;
+}
+
+[data-theme="braise"] {
+  --bg: #17110f;
+  --surface: #211816;
+  --surface-2: #2d211e;
+  --surface-3: #3d2d28;
+  --line: #3a2b27;
+  --text: #fbf1ec;
+  --muted: #c4aca3;
+  --accent: #ff8a5c;
+  --on-accent: #17110f;
+  --accent-soft: #ff8a5c29;
+  --coral: #ffc857;
+  --mint: #4fd1a5;
+  --warning: #ffc857;
+  --danger: #ff4d6d;
+  --track: #7a5a50;
+  --shadow-float: 0 12px 40px rgb(10 5 3 / 0.55);
+  --shadow-cover: 0 8px 24px rgb(10 5 3 / 0.45);
+  color-scheme: dark;
+}
+
+[data-theme="ocean"] {
+  --bg: #0b1619;
+  --surface: #112227;
+  --surface-2: #183038;
+  --surface-3: #22424c;
+  --line: #1f3a42;
+  --text: #eefafb;
+  --muted: #9dbdc4;
+  --accent: #3ec7d6;
+  --on-accent: #0b1619;
+  --accent-soft: #3ec7d629;
+  --coral: #ff8a5c;
+  --mint: #4fd1a5;
+  --warning: #ffc857;
+  --danger: #ff4d6d;
+  --track: #4d7580;
+  --shadow-float: 0 12px 40px rgb(2 8 10 / 0.55);
+  --shadow-cover: 0 8px 24px rgb(2 8 10 / 0.45);
+  color-scheme: dark;
+}
+
+[data-theme="rose"] {
+  --bg: #170f17;
+  --surface: #221722;
+  --surface-2: #2e1f2e;
+  --surface-3: #3f2b3f;
+  --line: #3a2839;
+  --text: #fbeefa;
+  --muted: #c6a9c4;
+  --accent: #f272c8;
+  --on-accent: #170f17;
+  --accent-soft: #f272c829;
+  --coral: #ffc857;
+  --mint: #4fd1a5;
+  --warning: #ffc857;
+  --danger: #ff4d6d;
+  --track: #7a5277;
+  --shadow-float: 0 12px 40px rgb(10 3 10 / 0.55);
+  --shadow-cover: 0 8px 24px rgb(10 3 10 / 0.45);
+  color-scheme: dark;
+}
+
+:root {
+  /* Height of the floating player dock, so pages can clear it. */
+  --dock-height: 88px;
   font-family:
+    "Manrope",
     system-ui,
     -apple-system,
     "Segoe UI",
-    Roboto,
     sans-serif;
+  font-weight: 500;
 }
 
 body {
@@ -41,16 +143,24 @@ a {
   text-decoration: none;
 }
 
-/* A routed page (grid cell between the sidebar and the optional queue). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A routed page (scrolling area under the top bar). Bottom padding clears the dock. */
 .view {
   min-height: 0;
-  padding: 1.5rem 2rem;
+  flex: 1;
+  padding: 0.75rem 0.25rem calc(var(--dock-height) + 48px) 0;
   overflow-y: auto;
 }
 
 .view h1 {
   margin: 0;
-  font-size: 2rem;
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .muted {
@@ -73,66 +183,118 @@ a {
 
 /* Rounded text buttons. */
 .pill {
+  display: inline-flex;
   flex: none;
-  padding: 0.6rem 1.4rem;
+  align-items: center;
+  gap: 0.5rem;
+  height: 44px;
+  padding: 0 1.25rem;
   border-radius: 999px;
   font-weight: 700;
+  font-size: 0.95rem;
+  transition:
+    transform 0.12s,
+    background 0.12s;
 }
 
 .pill.primary {
   background: var(--accent);
-  color: #000;
+  color: var(--on-accent);
 }
 
 .pill.secondary {
-  border: 1px solid var(--muted);
-  background: transparent;
+  background: var(--surface-2);
   color: var(--text);
 }
 
-.pill:not(:disabled):hover {
-  transform: scale(1.04);
+.pill.ghost {
+  background: transparent;
+  color: var(--muted);
+}
+
+.pill.primary:not(:disabled):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
 }
 
 .pill.secondary:not(:disabled):hover {
-  border-color: var(--text);
+  background: var(--surface-3);
+}
+
+.pill.ghost:not(:disabled):hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* Round icon buttons. */
+.icon-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+
+.icon-btn:not(:disabled):hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.icon-btn.active,
+.icon-btn.active:hover {
+  color: var(--accent);
 }
 
 /* Text inputs on a card / page. */
 .field {
-  padding: 0.6rem 0.8rem;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0 1rem;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 12px;
   background: var(--surface-2);
   color: var(--text);
   font: inherit;
-  font-size: 0.9rem;
-  font-weight: 400;
+  font-size: 0.95rem;
   outline: none;
   user-select: text;
 }
 
 .field:focus {
-  border-color: var(--muted);
+  border-color: var(--accent);
 }
 
 .card {
   padding: 1.5rem;
-  border-radius: 8px;
+  border-radius: 16px;
   background: var(--surface);
 }
 
 .card h2 {
   margin: 0;
   font-size: 1.1rem;
+  font-weight: 700;
 }
 
 /* Section titles in small caps (queue, group). */
 .section-title {
   margin: 1.25rem 0 0.6rem;
   color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
+}
+
+.kbd {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
 }

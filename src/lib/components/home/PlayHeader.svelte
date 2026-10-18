@@ -55,7 +55,7 @@
     padding: 0;
     border-radius: 50%;
     background: var(--accent);
-    color: #000;
+    color: var(--on-accent);
   }
 
   .play:not(:disabled):hover {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { sync } from "#lib/stores/sync.svelte.ts";
+  import { THEMES, theme } from "#lib/stores/theme.svelte.ts";
   import { plural } from "#lib/format.ts";
 
   const browserNames: Record<string, string> = {
@@ -27,12 +28,37 @@
 
 <section class="view">
   <header>
-    <h1>Synchronisation</h1>
+    <h1>Paramètres</h1>
+  </header>
+
+  <h2 class="section">Thème</h2>
+  <div class="themes" role="radiogroup" aria-label="Thème de couleur">
+    {#each THEMES as t (t.id)}
+      <button
+        class="theme"
+        class:selected={theme.current === t.id}
+        role="radio"
+        aria-checked={theme.current === t.id}
+        onclick={() => theme.set(t.id)}
+      >
+        <!-- The preview carries the theme's own variables. -->
+        <span class="preview" data-theme={t.id} aria-hidden="true">
+          <span class="surface"><span class="a"></span><span class="b"></span></span>
+          <span class="line"></span>
+          <span class="line short"></span>
+        </span>
+        {t.label}
+      </button>
+    {/each}
+  </div>
+
+  <h2 class="section">Synchronisation</h2>
+  <div class="sync-intro">
     <p class="subtitle">
       Importe tes titres likés et tes playlists. Les titres sont ajoutés sans être téléchargés : ils
       le seront au moment de l'écoute. Un titre déjà présent n'est jamais ajouté deux fois.
     </p>
-  </header>
+  </div>
 
   <div class="card">
     <h2>YouTube Music</h2>
@@ -108,7 +134,91 @@
 
 <style>
   header {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .section {
+    margin: 2rem 0 1rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .sync-intro {
+    margin-bottom: 1rem;
+  }
+
+  .themes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+    max-width: 52rem;
+  }
+
+  .theme {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0.6rem 0.6rem 0.8rem;
+    border: 2px solid transparent;
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 700;
+    text-align: left;
+  }
+
+  .theme:hover {
+    background: var(--surface-2);
+  }
+
+  .theme.selected {
+    border-color: var(--accent);
+  }
+
+  .preview {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: 72px;
+    box-sizing: border-box;
+    padding: 10px;
+    border-radius: 12px;
+    background: var(--bg);
+  }
+
+  .preview .surface {
+    display: flex;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 8px;
+    background: var(--surface);
+  }
+
+  .preview .a,
+  .preview .b {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+  }
+
+  .preview .a {
+    background: var(--accent);
+  }
+
+  .preview .b {
+    background: var(--coral);
+  }
+
+  .preview .line {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--text);
+    opacity: 0.85;
+  }
+
+  .preview .line.short {
+    width: 60%;
+    background: var(--muted);
   }
 
   .subtitle {

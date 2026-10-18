@@ -39,16 +39,12 @@
   input {
     flex: 1;
     min-width: 0;
-    height: 4px;
+    height: 6px;
     margin: 0;
     appearance: none;
-    border-radius: 2px;
-    background: linear-gradient(to right, var(--text) var(--fill), var(--track) var(--fill));
-    cursor: pointer;
-  }
-
-  input:hover:not(:disabled) {
+    border-radius: 3px;
     background: linear-gradient(to right, var(--accent) var(--fill), var(--track) var(--fill));
+    cursor: pointer;
   }
 
   input:disabled {
@@ -58,14 +54,17 @@
 
   input::-webkit-slider-thumb {
     appearance: none;
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: var(--text);
+    box-shadow: 0 0 0 4px var(--accent-soft);
     opacity: 0;
+    transition: opacity 0.12s;
   }
 
-  input:hover:not(:disabled)::-webkit-slider-thumb {
+  input:hover:not(:disabled)::-webkit-slider-thumb,
+  input:focus-visible::-webkit-slider-thumb {
     opacity: 1;
   }
 </style>

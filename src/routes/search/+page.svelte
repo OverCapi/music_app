@@ -3,7 +3,6 @@
   import { group } from "#lib/stores/group.svelte.ts";
   import { home } from "#lib/stores/home.svelte.ts";
   import { formatTime, formatViews } from "#lib/format.ts";
-  import Icon from "#lib/components/ui/Icon.svelte";
   import DownloadButton from "#lib/components/search/DownloadButton.svelte";
   import AddToGroup from "#lib/components/group/AddToGroup.svelte";
   import PlayHeader from "#lib/components/home/PlayHeader.svelte";
@@ -16,26 +15,11 @@
   $effect(() => {
     if (showDiscoveries) home.loadDiscoveries();
   });
-
-  function onsubmit(e: SubmitEvent) {
-    e.preventDefault();
-    search.search();
-  }
 </script>
 
 <section class="view">
   <header>
-    <h1>Rechercher</h1>
-    <form {onsubmit}>
-      <Icon name="search" size={18} />
-      <!-- svelte-ignore a11y_autofocus -->
-      <input
-        type="search"
-        placeholder="Titre, artiste… sur YouTube et YouTube Music"
-        bind:value={search.query}
-        autofocus
-      />
-    </form>
+    <h1>{search.lastQuery ? `Résultats pour « ${search.lastQuery} »` : "Rechercher"}</h1>
   </header>
 
   {#if search.loading}
@@ -43,7 +27,9 @@
   {:else if search.lastQuery && search.results.length === 0}
     <p class="status">Aucun résultat pour « {search.lastQuery} ».</p>
   {:else if !search.lastQuery}
-    <p class="status">Appuie sur Entrée pour chercher sur YouTube et YouTube Music.</p>
+    <p class="status">
+      Tape ta recherche dans la barre du haut (<span class="kbd">⌘K</span>) puis Entrée.
+    </p>
   {/if}
 
   {#if showDiscoveries && discoveries.length > 0}
@@ -58,7 +44,7 @@
   {/if}
 
   {#if search.results.length > 0}
-    <div class="results" class:stale={search.loading} class:in-group={group.isActive}>
+    <div class="results card" class:stale={search.loading} class:in-group={group.isActive}>
       <div class="row head">
         <span>#</span>
         <span>Titre</span>
@@ -125,39 +111,7 @@
 
 <style>
   header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
-  }
-
-  form {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    gap: 0.6rem;
-    max-width: 420px;
-    padding: 0.6rem 1rem;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    background: var(--surface-2);
-    color: var(--muted);
-  }
-
-  form:focus-within {
-    border-color: var(--muted);
-  }
-
-  input {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    font-size: 0.9rem;
-    outline: none;
+    margin-bottom: 1.25rem;
   }
 
   .more {
@@ -167,18 +121,17 @@
   }
 
   .more button {
-    padding: 0.55rem 1.4rem;
-    border: 1px solid var(--muted);
+    height: 40px;
+    padding: 0 1.25rem;
     border-radius: 999px;
-    background: transparent;
+    background: var(--surface-2);
     color: var(--text);
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-weight: 700;
   }
 
   .more button:not(:disabled):hover {
-    border-color: var(--text);
-    transform: scale(1.04);
+    background: var(--surface-3);
   }
 
   .discoveries {
@@ -190,6 +143,10 @@
     color: var(--muted);
   }
 
+  .results {
+    padding: 8px;
+  }
+
   .results.stale {
     opacity: 0.5;
   }
@@ -199,8 +156,8 @@
     grid-template-columns: 2.5rem minmax(0, 3fr) minmax(0, 2fr) 4rem 2.5rem;
     align-items: center;
     gap: 1rem;
-    padding: 0.4rem 0.75rem;
-    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    border-radius: 12px;
   }
 
   .in-group .row {
@@ -209,12 +166,13 @@
 
   .head {
     margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--surface-2);
+    border-bottom: 1px solid var(--line);
     border-radius: 0;
     color: var(--muted);
-    font-size: 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
   }
 
   .result {
@@ -244,9 +202,9 @@
 
   img {
     flex: none;
-    width: 40px;
-    height: 40px;
-    border-radius: 4px;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
     object-fit: cover;
     background: var(--surface-2);
   }
@@ -268,6 +226,7 @@
 
   .title {
     color: var(--text);
+    font-weight: 600;
   }
 
   .artist {

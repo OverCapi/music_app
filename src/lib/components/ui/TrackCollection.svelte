@@ -73,10 +73,10 @@
     place-items: center;
     width: 160px;
     height: 160px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, #450af5, #8e8ee5);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
-    color: rgb(255 255 255 / 0.85);
+    border-radius: 16px;
+    background: var(--accent-soft);
+    box-shadow: var(--shadow-cover);
+    color: var(--accent);
   }
 
   .info {
@@ -85,13 +85,19 @@
 
   .kind {
     margin: 0;
-    font-size: 0.8rem;
-    font-weight: 600;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 
   .info :global(h1) {
     margin: 0.3rem 0;
     font-size: 2.5rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
   }
 
   .meta {
@@ -110,15 +116,16 @@
   .play {
     display: grid;
     place-items: center;
-    width: 52px;
-    height: 52px;
+    width: 56px;
+    height: 56px;
     padding: 0;
     border-radius: 50%;
     background: var(--accent);
-    color: #000;
+    color: var(--on-accent);
   }
 
   .play:not(:disabled):hover {
-    transform: scale(1.05);
+    filter: brightness(1.08);
+    transform: translateY(-1px);
   }
 </style>

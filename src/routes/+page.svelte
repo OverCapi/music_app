@@ -1,8 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { resolve } from "$app/paths";
-  import type { MixCategory } from "#lib/bindings.ts";
+  import { convertFileSrc } from "@tauri-apps/api/core";
+  import type { MixCategory, Playlist, Track } from "#lib/bindings.ts";
   import { home } from "#lib/stores/home.svelte.ts";
+  import { playlists } from "#lib/stores/playlists.svelte.ts";
+  import { library } from "#lib/stores/library.svelte.ts";
+  import { player } from "#lib/stores/player.svelte.ts";
   import { plural } from "#lib/format.ts";
   import MediaCard from "#lib/components/home/MediaCard.svelte";
   import Thumb from "#lib/components/home/Thumb.svelte";
@@ -35,6 +39,15 @@
       })),
   );
 
+  const hour = new Date().getHours();
+  const greeting = hour < 5 || hour >= 18 ? "Bonsoir" : "Bonjour";
+
+  function tracksOf(playlist: Playlist): Track[] {
+    return playlist.track_ids
+      .map((id) => library.byId.get(id))
+      .filter((t): t is Track => t !== undefined);
+  }
+
   onMount(() => {
     home.load();
     home.loadRecent();
@@ -43,7 +56,10 @@
 
 <section class="view">
   <header>
-    <h1>Accueil</h1>
+    <div>
+      <h1 class="greeting">{greeting}</h1>
+      <p class="muted">Tes playlists, tes mix et ce que tu as écouté récemment.</p>
+    </div>
     <button
       class="pill secondary"
       onclick={() => home.load(true)}
@@ -52,6 +68,37 @@
       Actualiser
     </button>
   </header>
+
+  <h2>Tes playlists</h2>
+  {#if playlists.items.length === 0}
+    <p class="status">Crée ta première playlist avec le bouton + du menu de gauche.</p>
+  {:else}
+    <div class="grid">
+      {#each playlists.items as playlist (playlist.id)}
+        {@const tracks = tracksOf(playlist)}
+        <MediaCard
+          title={playlist.name}
+          subtitle={plural(playlist.track_ids.length, "titre")}
+          href={resolve("/playlist/[id]", { id: String(playlist.id) })}
+          playLabel={`Lire ${playlist.name}`}
+          onplay={() => tracks.length > 0 && player.playFrom(tracks, 0, "playlist")}
+        >
+          {#snippet cover()}
+            <span class="mosaic" class:single={tracks.length < 4}>
+              {#each tracks.slice(0, tracks.length < 4 ? 1 : 4) as track (track.id)}
+                <img
+                  src={convertFileSrc(String(track.id), "cover")}
+                  alt=""
+                  loading="lazy"
+                  onerror={(e) => ((e.currentTarget as HTMLElement).style.visibility = "hidden")}
+                />
+              {/each}
+            </span>
+          {/snippet}
+        </MediaCard>
+      {/each}
+    </div>
+  {/if}
 
   <h2>Tes mix</h2>
   {#if home.loadingMixes && home.mixes.length === 0}
@@ -116,29 +163,58 @@
 <style>
   header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
     margin-bottom: 0.5rem;
   }
 
+  header p {
+    margin: 0.4rem 0 0;
+  }
+
   header :global(.pill) {
-    padding: 0.4rem 1rem;
-    font-size: 0.8rem;
+    height: 40px;
+  }
+
+  .view h1.greeting {
+    font-size: 2.5rem;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
   }
 
   h2 {
-    margin: 2rem 0 0.25rem;
-    font-size: 1.4rem;
+    margin: 2.5rem 0 0.25rem;
+    font-size: 1.1rem;
+    font-weight: 700;
   }
 
   h3 {
     margin: 1.25rem 0 0.75rem;
     color: var(--muted);
-    font-size: 0.8rem;
-    font-weight: 600;
-    letter-spacing: 0.05em;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  .mosaic {
+    display: grid;
+    grid-template: 1fr 1fr / 1fr 1fr;
+    width: 100%;
+    height: 100%;
+  }
+
+  .mosaic.single {
+    grid-template: 1fr / 1fr;
+  }
+
+  .mosaic img {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    object-fit: cover;
   }
 
   .status {
@@ -148,7 +224,7 @@
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
     gap: 1rem;
   }
 
@@ -167,7 +243,7 @@
     gap: 0.75rem;
     min-width: 0;
     padding: 0.5rem;
-    border-radius: 6px;
+    border-radius: 12px;
     background: var(--surface);
     color: var(--text);
     text-align: left;
@@ -184,7 +260,7 @@
     width: 48px;
     height: 48px;
     overflow: hidden;
-    border-radius: 4px;
+    border-radius: 8px;
   }
 
   .img :global(.thumb) {
