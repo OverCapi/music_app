@@ -20,6 +20,7 @@ mod mixes;
 mod playlists;
 mod radio;
 mod search;
+mod storage;
 mod suggestions;
 mod sync;
 mod taste;
@@ -109,6 +110,13 @@ fn specta_builder() -> Builder<tauri::Wry> {
             sync::commands::get_sync_settings,
             sync::commands::set_ytmusic_browser,
             sync::commands::sync_youtube_music,
+            sync::commands::import_spotify_tsv,
+            storage::commands::get_storage_settings,
+            storage::commands::set_storage_settings,
+            storage::commands::list_storage_tracks,
+            storage::commands::optimize_storage,
+            storage::commands::delete_track_files,
+            storage::commands::set_favorite,
             lives::commands::search_lives,
             lives::commands::resolve_live_url,
             lives::commands::search_live_channels,
@@ -128,6 +136,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             group::GroupError,
             feedback::FeedbackChanged,
             sync::SyncProgress,
+            storage::StorageOptimized,
         ])
         .typ::<error::AppError>()
 }
@@ -156,6 +165,30 @@ fn track_fetcher(app: tauri::AppHandle) -> audio::TrackFetcher {
             done(fetch.await.map_err(|e| e.to_string()));
         });
     })
+}
+
+/// Background service run at every app start: deletes the audio files of tracks
+/// not played for a while (see `storage`), when enabled in the settings.
+fn spawn_storage_optimizer(app: tauri::AppHandle, storage: storage::Storage) {
+    tauri::async_runtime::spawn(async move {
+        // Let the app start and the queue be restored first.
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        let (Some(downloads), Some(audio)) =
+            (app.try_state::<Downloads>(), app.try_state::<AudioHandle>())
+        else {
+            return;
+        };
+        let result = match storage.settings() {
+            Ok(settings) if settings.auto => {
+                storage.optimize(&downloads, &storage::commands::queued_tracks(&audio))
+            }
+            Ok(_) => return,
+            Err(e) => Err(e),
+        };
+        if let Err(e) = result {
+            tracing::warn!("storage optimizer failed: {e}");
+        }
+    });
 }
 
 fn profile_dirs(app: &tauri::App) -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
@@ -268,6 +301,9 @@ pub fn run() {
                 Some(handle.clone()),
             ));
             app.manage(playlists);
+            let storage = storage::Storage::new(db.clone(), library.clone(), Some(handle.clone()));
+            app.manage(storage.clone());
+            spawn_storage_optimizer(handle.clone(), storage);
             app.manage(AccountStore::new(db));
             app.manage(GroupClient::new(handle, cache_dir.join("groups")));
             let music_dir = app

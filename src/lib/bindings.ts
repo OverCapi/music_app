@@ -102,6 +102,20 @@ export const commands = {
 	 *  `SyncProgress` events.
 	 */
 	syncYoutubeMusic: () => __TAURI_INVOKE<SyncReport>("sync_youtube_music"),
+	/**
+	 *  Imports a Spotify liked-songs TSV (`n, titre, artiste, durée`); progress comes as
+	 *  `SyncProgress` events.
+	 */
+	importSpotifyTsv: (path: string) => __TAURI_INVOKE<SpotifyImportReport>("import_spotify_tsv", { path }),
+	getStorageSettings: () => __TAURI_INVOKE<StorageSettings>("get_storage_settings"),
+	setStorageSettings: (settings: StorageSettings) => __TAURI_INVOKE<StorageSettings>("set_storage_settings", { settings }),
+	/**  Async: stats every downloaded file. */
+	listStorageTracks: () => __TAURI_INVOKE<StorageTrack[]>("list_storage_tracks"),
+	/**  Deletes the audio files of the tracks not played for more than the configured days. */
+	optimizeStorage: () => __TAURI_INVOKE<StorageReport>("optimize_storage"),
+	/**  Deletes the audio file of the chosen tracks (they stay in the library). */
+	deleteTrackFiles: (ids: number[]) => __TAURI_INVOKE<StorageReport>("delete_track_files", { ids }),
+	setFavorite: (id: number, favorite: boolean) => __TAURI_INVOKE<null>("set_favorite", { id, favorite }),
 	searchLives: (query: string) => __TAURI_INVOKE<LiveStream[]>("search_lives", { query }),
 	resolveLiveUrl: (url: string) => __TAURI_INVOKE<LiveStream[]>("resolve_live_url", { url }),
 	searchLiveChannels: (query: string) => __TAURI_INVOKE<LiveChannel[]>("search_live_channels", { query }),
@@ -124,6 +138,7 @@ export const events = {
 	playlistsChanged: makeEvent<PlaylistsChanged>("playlists-changed"),
 	queueChanged: makeEvent<QueueChanged>("queue-changed"),
 	searchDetails: makeEvent<SearchDetails>("search-details"),
+	storageOptimized: makeEvent<StorageOptimized>("storage-optimized"),
 	syncProgress: makeEvent<SyncProgress>("sync-progress"),
 };
 
@@ -417,6 +432,45 @@ export type SearchResult = {
 	details_pending: boolean,
 };
 
+export type SpotifyImportReport = {
+	total: number,
+	/**  Already in the library (not searched). */
+	already_owned: number,
+	/**  Found on YouTube and added to the library. */
+	added: number,
+	not_found: number,
+	/**  File listing the songs not found (empty when none). */
+	not_found_path: string | null,
+};
+
+/**  Emitted after a deletion that removed at least one file. */
+export type StorageOptimized = StorageReport;
+
+export type StorageReport = {
+	deleted: number,
+	bytes_freed: number,
+};
+
+export type StorageSettings = {
+	/**  Run the optimizer in the background at every app start. */
+	auto: boolean,
+	/**  A track not played for more than this many days is expired. */
+	days: number,
+};
+
+/**  A track whose audio file can be deleted. */
+export type StorageTrack = {
+	track_id: number,
+	title: string,
+	artist: string | null,
+	/**  File size in bytes. */
+	size: number,
+	/**  Unix timestamp (seconds) of the last play, else of the date it was added. */
+	last_played: number,
+	/**  Not played for more than the configured number of days. */
+	expired: boolean,
+};
+
 /**  A recommended track as sent by the frontend (a `MixTrack` fits). */
 export type SuggestedTrack = {
 	youtube_id: string,
@@ -485,6 +539,8 @@ export type Track = {
 	added_at: number,
 	/**  Set for tracks downloaded from YouTube / YouTube Music. */
 	youtube_id: string | null,
+	/**  Favorite tracks are never removed by the storage optimizer. */
+	favorite: boolean,
 };
 
 export type TrackDownload = {

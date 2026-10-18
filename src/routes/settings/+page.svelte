@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { open } from "@tauri-apps/plugin-dialog";
+  import { storage } from "#lib/stores/storage.svelte.ts";
+  import { formatSize } from "#lib/format.ts";
   import { sync } from "#lib/stores/sync.svelte.ts";
   import { THEMES, theme } from "#lib/stores/theme.svelte.ts";
   import { plural } from "#lib/format.ts";
@@ -14,6 +17,15 @@
     vivaldi: "Vivaldi",
     whale: "Whale",
   };
+
+  async function pickSpotify() {
+    const path = await open({ filters: [{ name: "TSV", extensions: ["tsv"] }] });
+    if (typeof path === "string") await sync.importSpotify(path);
+  }
+
+  const freeable = $derived(
+    storage.tracks.filter((t) => storage.selected.has(t.track_id)).reduce((n, t) => n + t.size, 0),
+  );
 
   const settings = $derived(sync.settings);
   const lastSync = $derived(
@@ -128,7 +140,104 @@
 
   <div class="card">
     <h2>Spotify</h2>
-    <p class="muted">Bientôt : import de l'export de données Spotify.</p>
+    <p class="muted">
+      Importe une liste de titres (fichier .tsv : n, titre, artiste, durée). Les titres déjà dans la
+      bibliothèque sont ignorés, les autres sont cherchés sur YouTube. Ceux qui ne sont pas trouvés
+      sont écrits dans un fichier « _non_trouves.tsv » à côté de la liste.
+    </p>
+    <div class="row">
+      <button class="pill primary" disabled={sync.running} onclick={pickSpotify}>
+        {sync.running ? "Import…" : "Choisir un fichier"}
+      </button>
+      {#if sync.running && sync.progress}
+        <span class="muted">{sync.progress.step} ({sync.progress.done}/{sync.progress.total})</span>
+      {/if}
+    </div>
+    {#if sync.spotifyReport && !sync.running}
+      {@const r = sync.spotifyReport}
+      <p class="report">
+        {plural(r.total, "titre")} : {r.already_owned} déjà présent{r.already_owned > 1 ? "s" : ""},
+        {r.added} ajouté{r.added > 1 ? "s" : ""}, {r.not_found} introuvable{r.not_found > 1
+          ? "s"
+          : ""}.
+        {#if r.not_found_path}Liste : {r.not_found_path}{/if}
+      </p>
+    {/if}
+  </div>
+
+  <h2 class="section">Stockage</h2>
+  <div class="card">
+    <h2>Optimiseur de stockage</h2>
+    <p class="muted">
+      Supprime le fichier audio des sons pas écoutés depuis longtemps. Les sons restent dans la
+      bibliothèque et sont retéléchargés quand tu les écoutes. Les favoris (★) sont conservés.
+    </p>
+    {#if storage.settings}
+      {@const s = storage.settings}
+      <label class="row">
+        <input
+          type="checkbox"
+          checked={s.auto}
+          onchange={(e) => storage.save({ ...s, auto: e.currentTarget.checked })}
+        />
+        <span>Optimiser automatiquement à chaque ouverture de l'app</span>
+      </label>
+      <label class="row">
+        <span>Supprimer après</span>
+        <input
+          class="field days"
+          type="number"
+          min="1"
+          value={s.days}
+          onchange={(e) =>
+            storage.save({
+              ...s,
+              days: Math.max(1, Math.floor(Number(e.currentTarget.value)) || 1),
+            })}
+        />
+        <span>jours sans écoute</span>
+      </label>
+      <div class="row">
+        <button class="pill primary" disabled={storage.busy} onclick={() => storage.optimize()}>
+          Optimiser maintenant
+        </button>
+        <button class="pill" disabled={storage.busy} onclick={() => storage.load()}>
+          Afficher les fichiers
+        </button>
+      </div>
+      {#if storage.tracks.length > 0}
+        <ul class="files">
+          {#each storage.tracks as t (t.track_id)}
+            <li>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={storage.selected.has(t.track_id)}
+                  onchange={() => storage.toggle(t.track_id)}
+                />
+                <span class="name">{t.title}{t.artist ? ` — ${t.artist}` : ""}</span>
+                <span class="muted">
+                  {new Date(t.last_played * 1000).toLocaleDateString("fr-FR")} · {formatSize(
+                    t.size,
+                  )}
+                </span>
+              </label>
+            </li>
+          {/each}
+        </ul>
+        <div class="row">
+          <button
+            class="pill primary"
+            disabled={storage.busy || storage.selected.size === 0}
+            onclick={() => storage.deleteSelected()}
+          >
+            Supprimer la sélection ({formatSize(freeable)})
+          </button>
+        </div>
+      {/if}
+    {:else}
+      <p class="muted">Chargement…</p>
+    {/if}
   </div>
 </section>
 
@@ -243,6 +352,33 @@
   select {
     width: auto;
     min-width: 10rem;
+  }
+
+  .days {
+    width: 5rem;
+  }
+
+  .files {
+    list-style: none;
+    margin: 1rem 0 0;
+    padding: 0;
+    max-height: 18rem;
+    overflow-y: auto;
+  }
+
+  .files label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.3rem 0;
+  }
+
+  .files .name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .report {

@@ -11,6 +11,7 @@
   import { group } from "#lib/stores/group.svelte.ts";
   import { feedback } from "#lib/stores/feedback.svelte.ts";
   import { sync } from "#lib/stores/sync.svelte.ts";
+  import { storage } from "#lib/stores/storage.svelte.ts";
   import { errorMessage, toasts } from "#lib/stores/toasts.svelte.ts";
   import Sidebar from "#lib/components/Sidebar.svelte";
   import TopBar from "#lib/components/TopBar.svelte";
@@ -30,12 +31,21 @@
   onMount(() => {
     account.refresh();
     // Each store subscribes to its events before loading its initial state.
-    const unlisteners = [player, library, playlists, search, downloads, group, sync, feedback].map(
-      (store) =>
-        store.init().catch((e) => {
-          toasts.push(errorMessage(e));
-          return () => {};
-        }),
+    const unlisteners = [
+      player,
+      library,
+      playlists,
+      search,
+      downloads,
+      group,
+      sync,
+      feedback,
+      storage,
+    ].map((store) =>
+      store.init().catch((e) => {
+        toasts.push(errorMessage(e));
+        return () => {};
+      }),
     );
     return () => unlisteners.forEach((p) => p.then((unlisten) => unlisten()));
   });

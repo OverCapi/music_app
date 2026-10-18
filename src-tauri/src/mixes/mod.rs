@@ -898,6 +898,7 @@ mod tests {
             duration: 100.0,
             added_at: 0,
             youtube_id: youtube_id.map(Into::into),
+            favorite: false,
         }
     }
 

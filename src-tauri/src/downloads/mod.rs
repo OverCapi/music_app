@@ -219,6 +219,13 @@ impl Downloads {
         Ok(())
     }
 
+    /// The canonical path of `path` if it is an existing file inside the music folder.
+    pub fn owned_file(&self, path: &str) -> Option<PathBuf> {
+        let file = Path::new(path).canonicalize().ok()?;
+        let dir = self.dir.canonicalize().ok()?;
+        (file.starts_with(dir) && file.is_file()).then_some(file)
+    }
+
     /// Moves `path` to the trash if it is inside the music folder. Returns whether
     /// it did.
     pub fn trash_if_owned(&self, path: &str) -> AppResult<bool> {

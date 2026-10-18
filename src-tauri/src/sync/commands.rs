@@ -1,6 +1,6 @@
 use tauri::State;
 
-use super::{LibrarySync, SyncReport, SyncSettings};
+use super::{LibrarySync, SpotifyImportReport, SyncReport, SyncSettings};
 use crate::error::AppResult;
 
 #[tauri::command]
@@ -25,4 +25,16 @@ pub fn set_ytmusic_browser(
 pub async fn sync_youtube_music(sync: State<'_, LibrarySync>) -> AppResult<SyncReport> {
     let sync = sync.inner().clone();
     sync.sync_youtube_music().await
+}
+
+/// Imports a Spotify liked-songs TSV (`n, titre, artiste, durée`); progress comes as
+/// `SyncProgress` events.
+#[tauri::command]
+#[specta::specta]
+pub async fn import_spotify_tsv(
+    sync: State<'_, LibrarySync>,
+    path: String,
+) -> AppResult<SpotifyImportReport> {
+    let sync = sync.inner().clone();
+    sync.import_spotify_tsv(&path).await
 }

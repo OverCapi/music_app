@@ -145,8 +145,13 @@
   .track:hover .row-play,
   .track:hover :global(.row-action),
   .track:focus-within :global(.row-action),
-  .track :global(.row-action.open) {
+  .track :global(.row-action.open),
+  .track :global(.row-action.favorite) {
     visibility: visible;
+  }
+
+  .track :global(.row-action.favorite) {
+    color: var(--accent, gold);
   }
 
   .row-actions {

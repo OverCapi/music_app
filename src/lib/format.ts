@@ -29,3 +29,14 @@ export function formatViews(views: number): string {
 export function plural(n: number, word: string): string {
   return `${n} ${word}${n > 1 ? "s" : ""}`;
 }
+
+/** `850 Ko`, `12,4 Mo`, `1,2 Go`. */
+export function formatSize(bytes: number): string {
+  const units = ["o", "Ko", "Mo", "Go"];
+  let i = 0;
+  while (bytes >= 1024 && i < units.length - 1) {
+    bytes /= 1024;
+    i++;
+  }
+  return `${i === 0 ? bytes : bytes.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} ${units[i]}`;
+}
