@@ -86,18 +86,19 @@
     grid-template-columns: 2.5rem minmax(0, 3fr) minmax(0, 2fr) 4rem var(--actions-width);
     align-items: center;
     gap: 1rem;
-    padding: 0.4rem 0.75rem;
-    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    border-radius: 12px;
   }
 
   .head {
     margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--surface-2);
+    border-bottom: 1px solid var(--line);
     border-radius: 0;
     color: var(--muted);
-    font-size: 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
   }
 
   .track {
@@ -174,9 +175,9 @@
 
   img {
     flex: none;
-    width: 40px;
-    height: 40px;
-    border-radius: 4px;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
     object-fit: cover;
     background: var(--surface-2);
   }
@@ -204,15 +205,23 @@
 
   .title {
     color: var(--text);
+    font-weight: 600;
   }
 
   .artist {
     font-size: 0.8rem;
   }
 
-  .current .title,
-  .current .num {
+  .current {
+    background: var(--accent-soft);
+  }
+
+  .current .title {
     color: var(--accent);
+  }
+
+  .current .num {
+    color: var(--coral);
   }
 
   .duration {

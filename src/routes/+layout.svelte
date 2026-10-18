@@ -12,6 +12,7 @@
   import { sync } from "#lib/stores/sync.svelte.ts";
   import { errorMessage, toasts } from "#lib/stores/toasts.svelte.ts";
   import Sidebar from "#lib/components/Sidebar.svelte";
+  import TopBar from "#lib/components/TopBar.svelte";
   import PlayerBar from "#lib/components/player/PlayerBar.svelte";
   import QueueView from "#lib/components/player/QueueView.svelte";
   import Toasts from "#lib/components/ui/Toasts.svelte";
@@ -34,9 +35,12 @@
   });
 </script>
 
-<main class:queue-open={queueOpen}>
+<main>
   <Sidebar />
-  {@render children()}
+  <div class="content">
+    <TopBar />
+    {@render children()}
+  </div>
   {#if queueOpen}
     <QueueView onclose={() => (queueOpen = false)} />
   {/if}
@@ -45,14 +49,22 @@
 <Toasts />
 
 <style>
+  /* Floating shell: rail | top bar + page; the queue and the player dock float over the page. */
   main {
-    display: grid;
-    grid-template-columns: 220px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+    position: relative;
+    display: flex;
+    gap: 16px;
     height: 100vh;
+    box-sizing: border-box;
+    padding: 16px;
+    overflow: hidden;
   }
 
-  main.queue-open {
-    grid-template-columns: 220px minmax(0, 1fr) 320px;
+  .content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
   }
 </style>

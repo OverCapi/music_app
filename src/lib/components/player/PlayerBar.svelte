@@ -104,7 +104,7 @@
               />
             {/if}
           {/key}
-          ♪
+          <Icon name="note" size={24} />
         </div>
         <div class="meta">
           <span class="title" title={entry.title}>{entry.title}</span>
@@ -124,7 +124,7 @@
             />
           {/if}
         {/key}
-        ♪
+        <Icon name="note" size={24} />
       </div>
       <div class="meta">
         <span class="title" title={s.path ?? undefined}
@@ -245,51 +245,57 @@
 </footer>
 
 <style>
+  /* Floating dock, right of the rail (16px inset + 72px rail + 16px gap). */
   .player-bar {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    left: 104px;
+    z-index: 3;
     display: grid;
-    grid-column: 1 / -1;
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
     align-items: center;
-    gap: 1.5rem;
-    padding: 0.75rem 1rem;
+    gap: 24px;
+    height: var(--dock-height);
+    box-sizing: border-box;
+    padding: 12px 20px;
+    border-radius: 24px;
     background: var(--surface);
-    border-top: 1px solid var(--surface-2);
+    box-shadow: var(--shadow-float);
   }
 
   .now-playing {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 12px;
     min-width: 0;
   }
 
   .badge {
     flex: none;
-    padding: 0.15rem 0.5rem;
+    padding: 0.2rem 0.6rem;
     border-radius: 999px;
-    background: var(--accent);
-    color: #000;
+    background: var(--accent-soft);
+    color: var(--text);
     font-size: 0.7rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .cover {
-    display: grid;
-    flex: none;
-    place-items: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 4px;
-    background: linear-gradient(135deg, #2a2a2a, #3e3e3e);
-    color: var(--muted);
-    font-size: 1.4rem;
+    letter-spacing: 0.06em;
   }
 
   .cover {
     position: relative;
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 56px;
+    height: 56px;
     overflow: hidden;
+    border-radius: 12px;
+    background: var(--surface-3);
+    box-shadow: var(--shadow-cover);
+    color: var(--muted);
+    font-size: 1.4rem;
   }
 
   .cover img {
@@ -298,7 +304,7 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    background: var(--surface-2);
+    background: var(--surface-3);
   }
 
   .meta {
@@ -315,32 +321,33 @@
   }
 
   .title {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    font-weight: 700;
   }
 
   .artist {
     color: var(--muted);
-    font-size: 0.75rem;
+    font-size: 0.85rem;
   }
 
   .center {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.4rem;
+    gap: 6px;
   }
 
   .controls {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 8px;
   }
 
   .icon {
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     padding: 0;
     border-radius: 50%;
     background: transparent;
@@ -348,6 +355,7 @@
   }
 
   .icon:not(:disabled):hover {
+    background: var(--surface-2);
     color: var(--text);
   }
 
@@ -356,40 +364,43 @@
     color: var(--accent);
   }
 
-  .icon.play {
-    width: 36px;
-    height: 36px;
-    background: var(--text);
-    color: #000;
+  .icon.play,
+  .icon.play:not(:disabled):hover {
+    width: 48px;
+    height: 48px;
+    background: var(--accent);
+    color: var(--on-accent);
   }
 
   .icon.play:not(:disabled):hover {
-    transform: scale(1.06);
-    color: #000;
+    filter: brightness(1.08);
   }
 
   .progress,
   .volume {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 10px;
     width: 100%;
   }
 
   .volume {
     justify-content: flex-end;
+    gap: 4px;
     color: var(--muted);
   }
 
   .volume-slider {
     display: flex;
-    flex: 0 1 120px;
+    flex: 0 1 110px;
+    margin-left: 6px;
   }
 
   .time {
     min-width: 3ch;
     color: var(--muted);
     font-size: 0.75rem;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
 </style>

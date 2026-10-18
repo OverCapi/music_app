@@ -141,7 +141,7 @@
     padding: 0.3rem;
     border-radius: 6px;
     background: var(--surface-2);
-    box-shadow: 0 4px 16px rgb(0 0 0 / 0.5);
+    box-shadow: var(--shadow-float);
     white-space: nowrap;
   }
 

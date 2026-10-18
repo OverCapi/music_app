@@ -7,17 +7,27 @@
   import { group } from "#lib/stores/group.svelte.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
 
+  // Search and settings live in the top bar, so they are not rail items.
   const items = [
     { href: resolve("/"), label: "Accueil", icon: "home" },
     { href: resolve("/library"), label: "Bibliothèque", icon: "library" },
-    { href: resolve("/search"), label: "Rechercher", icon: "search" },
     { href: resolve("/group"), label: "Groupe d'écoute", icon: "group" },
-    { href: resolve("/sync"), label: "Synchronisation", icon: "sync" },
   ] as const;
 
   let creating = $state(false);
   let newName = $state("");
   let input = $state<HTMLInputElement>();
+
+  /** Two-letter monogram of a playlist name. */
+  function initials(name: string) {
+    const words = name.trim().split(/\s+/);
+    return (words.length > 1 ? words[0][0] + words[1][0] : name.slice(0, 2)).toUpperCase();
+  }
+
+  /** Stable tile hue per playlist; dark tile under light text, readable in every theme. */
+  function tileColor(id: number) {
+    return `hsl(${(id * 67) % 360} 38% 32%)`;
+  }
 
   async function startCreating() {
     creating = true;
@@ -35,12 +45,18 @@
   }
 </script>
 
-<nav class="sidebar">
+<nav class="rail" aria-label="Navigation principale">
   {#each items as item (item.href)}
     {@const active = page.url.pathname === item.href}
-    <a class="nav-item" class:active href={item.href} aria-current={active ? "page" : undefined}>
-      <Icon name={item.icon} size={22} />
-      {item.label}
+    <a
+      class="item"
+      class:active
+      href={item.href}
+      aria-label={item.label}
+      aria-current={active ? "page" : undefined}
+    >
+      <Icon name={item.icon} size={24} />
+      <span class="tip">{item.label}</span>
       {#if item.icon === "group" && group.isActive}
         <span
           class="live"
@@ -51,105 +67,131 @@
     </a>
   {/each}
 
-  <div class="section">
-    <h2>Playlists</h2>
-    <button
-      class="add"
-      onclick={startCreating}
-      aria-label="Créer une playlist"
-      title="Créer une playlist"
-    >
-      <Icon name="plus" size={18} />
-    </button>
-  </div>
-
-  {#if creating}
-    <form onsubmit={create}>
-      <input
-        bind:this={input}
-        bind:value={newName}
-        placeholder="Nom de la playlist"
-        maxlength="100"
-        onblur={() => !newName.trim() && (creating = false)}
-        onkeydown={(e) => e.key === "Escape" && (creating = false)}
-      />
-    </form>
-  {/if}
+  <div class="divider"></div>
 
   <div class="playlists">
     {#each playlists.items as playlist (playlist.id)}
       {@const href = resolve("/playlist/[id]", { id: String(playlist.id) })}
       {@const active = page.url.pathname === href}
       <a
-        class="playlist"
+        class="tile"
         class:active
         {href}
+        style:background={tileColor(playlist.id)}
+        aria-label={playlist.name}
         aria-current={active ? "page" : undefined}
-        title={playlist.name}
+        title={`${playlist.name} · ${playlist.track_ids.length}`}
       >
-        <span class="name">{playlist.name}</span>
-        <span class="count">{playlist.track_ids.length}</span>
+        {initials(playlist.name)}
       </a>
-    {:else}
-      {#if !creating}
-        <p class="hint">Crée ta première playlist avec le bouton +.</p>
-      {/if}
     {/each}
+  </div>
+
+  <div class="create">
+    <button
+      class="add"
+      onclick={startCreating}
+      aria-label="Créer une playlist"
+      title="Créer une playlist"
+    >
+      <Icon name="plus" size={20} />
+    </button>
+    {#if creating}
+      <form onsubmit={create}>
+        <input
+          class="field"
+          bind:this={input}
+          bind:value={newName}
+          placeholder="Nom de la playlist"
+          maxlength="100"
+          onblur={() => !newName.trim() && (creating = false)}
+          onkeydown={(e) => e.key === "Escape" && (creating = false)}
+        />
+      </form>
+    {/if}
   </div>
 </nav>
 
 <style>
-  .sidebar {
+  .rail {
     display: flex;
+    flex: none;
     flex-direction: column;
-    gap: 0.25rem;
-    min-height: 0;
-    padding: 1.25rem 0.75rem;
-    background: #000;
-  }
-
-  a,
-  button {
-    display: flex;
     align-items: center;
-    padding: 0;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--muted);
-    text-align: left;
+    gap: 8px;
+    width: 72px;
+    min-height: 0;
+    box-sizing: border-box;
+    padding: 16px 0;
+    border-radius: 24px;
+    background: var(--surface);
+    box-shadow: var(--shadow-float);
   }
 
-  a:hover,
-  button:hover,
-  a.active {
+  .item,
+  .tile,
+  .add {
+    position: relative;
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border-radius: 12px;
+  }
+
+  .item {
+    color: var(--muted);
+  }
+
+  .item:hover {
+    background: var(--surface-2);
     color: var(--text);
   }
 
-  .nav-item {
-    gap: 0.9rem;
-    padding: 0.6rem 0.75rem;
-    font-weight: 700;
-    font-size: 0.9rem;
+  .item.active {
+    background: var(--accent-soft);
+    color: var(--accent);
   }
 
-  .nav-item.active,
-  .playlist.active {
+  .tip {
+    position: absolute;
+    left: 60px;
+    top: 50%;
+    z-index: 10;
+    padding: 6px 10px;
+    border-radius: 8px;
     background: var(--surface-2);
+    box-shadow: var(--shadow-float);
+    color: var(--text);
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-50%);
+    transition: opacity 0.12s;
+  }
+
+  .item:hover .tip,
+  .item:focus-visible .tip {
+    opacity: 1;
   }
 
   .live {
+    position: absolute;
+    top: 8px;
+    right: 8px;
     width: 8px;
     height: 8px;
-    margin-left: auto;
     border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 0 3px rgb(29 185 84 / 0.25);
+    background: var(--coral);
     animation: pulse 1.6s ease-in-out infinite;
   }
 
   .live.offline {
     background: var(--warning);
-    box-shadow: 0 0 0 3px rgb(245 155 35 / 0.25);
   }
 
   @keyframes pulse {
@@ -158,82 +200,65 @@
     }
   }
 
-  .section {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 1.25rem 0 0.25rem;
-    padding: 0 0.75rem;
-  }
-
-  h2 {
-    margin: 0;
-    color: var(--muted);
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .add {
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-  }
-
-  .add:hover {
-    background: var(--surface-2);
-  }
-
-  form {
-    padding: 0.25rem;
-  }
-
-  input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0.45rem 0.6rem;
-    border: 1px solid var(--muted);
-    border-radius: 4px;
-    background: var(--surface);
-    color: var(--text);
-    font: inherit;
-    font-size: 0.85rem;
-    outline: none;
+  .divider {
+    flex: none;
+    width: 32px;
+    height: 1px;
+    margin: 8px 0;
+    background: var(--line);
   }
 
   .playlists {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
+    align-items: center;
+    gap: 8px;
     min-height: 0;
+    /* Room for the active ring, which overflow would clip. */
+    padding: 3px;
     overflow-y: auto;
+    scrollbar-width: none;
   }
 
-  .playlist {
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-  }
-
-  .name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .count {
-    flex: none;
-    color: var(--muted);
-    font-size: 0.75rem;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .hint {
-    margin: 0.25rem 0.75rem;
-    color: var(--muted);
+  .tile {
+    color: #fff;
     font-size: 0.8rem;
+    font-weight: 800;
+    transition: box-shadow 0.12s;
+  }
+
+  .tile:hover,
+  .tile.active {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+
+  .create {
+    position: relative;
+  }
+
+  .add {
+    border: 1px dashed var(--track);
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .add:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+
+  form {
+    position: absolute;
+    left: 60px;
+    top: 0;
+    z-index: 10;
+    padding: 8px;
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow-float);
+  }
+
+  input {
+    width: 220px;
   }
 </style>

@@ -139,7 +139,7 @@
     padding: 0.35rem;
     border-radius: 6px;
     background: var(--surface-2);
-    box-shadow: 0 12px 32px rgb(0 0 0 / 0.6);
+    box-shadow: var(--shadow-float);
     cursor: default;
   }
 

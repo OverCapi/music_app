@@ -67,14 +67,17 @@
 <style>
   .media {
     position: relative;
-    border-radius: 8px;
+    border-radius: 16px;
     background: var(--surface);
-    transition: background 0.15s;
+    transition:
+      background 0.15s,
+      transform 0.15s;
   }
 
   .media:hover,
   .media:focus-within {
     background: var(--surface-2);
+    transform: translateY(-2px);
   }
 
   .main {
@@ -84,7 +87,7 @@
     box-sizing: border-box;
     width: 100%;
     padding: 0.8rem;
-    border-radius: 8px;
+    border-radius: 16px;
     background: transparent;
     color: var(--text);
     text-align: left;
@@ -97,7 +100,7 @@
     overflow: hidden;
     border-radius: 6px;
     background: var(--surface-3);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+    box-shadow: var(--shadow-float);
   }
 
   .mosaic {
@@ -117,7 +120,7 @@
   }
 
   .blank {
-    background: var(--surface-2);
+    background: var(--surface-3);
   }
 
   .title,
@@ -150,8 +153,8 @@
     padding: 0;
     border-radius: 50%;
     background: var(--accent);
-    box-shadow: 0 8px 16px rgb(0 0 0 / 0.5);
-    color: #000;
+    box-shadow: var(--shadow-float);
+    color: var(--on-accent);
     opacity: 0;
     transform: translateY(8px);
     transition:

@@ -236,7 +236,7 @@
 
   .me .avatar {
     background: var(--accent);
-    color: #000;
+    color: var(--on-accent);
   }
 
   .ready {

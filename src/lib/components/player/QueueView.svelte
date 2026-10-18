@@ -5,6 +5,7 @@
   import { player } from "#lib/stores/player.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
   import { fileName, formatTime } from "#lib/format.ts";
+  import Icon from "#lib/components/ui/Icon.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -25,7 +26,9 @@
 <aside class="queue">
   <header>
     <h2>File d'attente</h2>
-    <button class="close" onclick={onclose} aria-label="Fermer" title="Fermer">✕</button>
+    <button class="icon-btn" onclick={onclose} aria-label="Fermer" title="Fermer">
+      <Icon name="close" />
+    </button>
   </header>
 
   {#if group.isActive || player.state.group_mode}
@@ -85,7 +88,7 @@
             aria-label="Retirer de la file"
             title="Retirer de la file"
           >
-            ✕
+            <Icon name="close" size={16} />
           </button>
         </div>
       {/each}
@@ -94,14 +97,22 @@
 </aside>
 
 <style>
+  /* Slide-over panel floating above the page, over the dock's top edge. */
   .queue {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    bottom: calc(var(--dock-height) + 32px);
+    z-index: 2;
     display: flex;
     flex-direction: column;
-    min-height: 0;
-    padding: 1.25rem 1rem;
+    width: 360px;
+    box-sizing: border-box;
+    padding: 20px;
     overflow-y: auto;
+    border-radius: 16px;
     background: var(--surface);
-    border-left: 1px solid var(--surface-2);
+    box-shadow: var(--shadow-float);
   }
 
   header,
@@ -114,13 +125,13 @@
   h2 {
     margin: 0;
     font-size: 1.1rem;
+    font-weight: 700;
   }
 
   .section-title {
     margin: 1.25rem 0 0.5rem;
   }
 
-  .close,
   .clear,
   .remove {
     padding: 0;
@@ -128,7 +139,6 @@
     color: var(--muted);
   }
 
-  .close:hover,
   .clear:hover,
   .remove:hover {
     color: var(--text);
@@ -144,8 +154,8 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.45rem 0.5rem;
-    border-radius: 4px;
+    padding: 0.5rem 0.6rem;
+    border-radius: 12px;
     outline: none;
   }
 
@@ -172,8 +182,12 @@
     font-size: 0.9rem;
   }
 
+  .item.current {
+    background: var(--accent-soft);
+  }
+
   .current .title {
-    color: var(--accent);
+    font-weight: 700;
   }
 
   .artist,
@@ -187,8 +201,10 @@
   }
 
   .remove {
-    width: 16px;
-    font-size: 0.75rem;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
     visibility: hidden;
   }
 
@@ -199,7 +215,7 @@
   .group-note {
     margin-top: 1rem;
     padding: 0.75rem;
-    border-radius: 6px;
+    border-radius: 12px;
     background: var(--surface-2);
     font-size: 0.85rem;
   }
