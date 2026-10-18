@@ -17,7 +17,7 @@
 </script>
 
 <ul>
-  {#each tracks as track, i (track.youtube_id)}
+  {#each tracks as track, i (`${i}-${track.youtube_id}`)}
     <li>
       <button class="row" onclick={() => onplay(i)} title="Lire">
         <span class="index">

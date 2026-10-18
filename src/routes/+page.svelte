@@ -22,21 +22,20 @@
   );
   const selected = $derived(home.mixes.find((m) => m.id === selectedId) ?? null);
   const discoveries = $derived(home.discoveries?.tracks ?? []);
-  // Group tracks and tracks without a YouTube id cannot be replayed from here.
+  // Group tracks and tracks without a YouTube id cannot be replayed from here. A track
+  // listened to several times appears once, at its most recent listen.
   const playable = $derived(
-    home.recent.flatMap((p) =>
-      p.youtube_id
-        ? [
-            {
-              youtube_id: p.youtube_id,
-              title: p.title,
-              artist: p.artist,
-              duration: null,
-              known: true,
-            },
-          ]
-        : [],
-    ),
+    home.recent
+      .filter(
+        (p, i) => p.youtube_id && home.recent.findIndex((q) => q.youtube_id === p.youtube_id) === i,
+      )
+      .map((p) => ({
+        youtube_id: p.youtube_id!,
+        title: p.title,
+        artist: p.artist,
+        duration: null,
+        known: true,
+      })),
   );
 
   onMount(() => {
