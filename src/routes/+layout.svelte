@@ -1,5 +1,6 @@
 <script lang="ts">
   import "../app.css";
+  import { afterNavigate } from "$app/navigation";
   import { onMount, type Snippet } from "svelte";
   import { player } from "#lib/stores/player.svelte.ts";
   import { library } from "#lib/stores/library.svelte.ts";
@@ -15,11 +16,16 @@
   import TopBar from "#lib/components/TopBar.svelte";
   import PlayerBar from "#lib/components/player/PlayerBar.svelte";
   import QueueView from "#lib/components/player/QueueView.svelte";
+  import LiveVideo from "#lib/components/live/LiveVideo.svelte";
+  import { lives } from "#lib/stores/lives.svelte.ts";
   import Toasts from "#lib/components/ui/Toasts.svelte";
 
   let { children }: { children: Snippet } = $props();
 
   let queueOpen = $state(false);
+
+  // The live video replaces the page; leaving the page by navigating closes it.
+  afterNavigate(() => (lives.videoOpen = false));
 
   onMount(() => {
     account.refresh();
@@ -39,7 +45,11 @@
   <Sidebar />
   <div class="content">
     <TopBar />
-    {@render children()}
+    {#if lives.videoOpen}
+      <LiveVideo />
+    {:else}
+      {@render children()}
+    {/if}
   </div>
   {#if queueOpen}
     <QueueView onclose={() => (queueOpen = false)} />

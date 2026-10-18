@@ -11,6 +11,7 @@
   const items = [
     { href: resolve("/"), label: "Accueil", icon: "home" },
     { href: resolve("/library"), label: "Bibliothèque", icon: "library" },
+    { href: resolve("/lives"), label: "Lives", icon: "live" },
     { href: resolve("/group"), label: "Groupe d'écoute", icon: "group" },
   ] as const;
 

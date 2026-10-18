@@ -25,6 +25,7 @@ class Player {
     group_mode: false,
     shuffle: false,
     repeat: "off",
+    live: null,
   });
   queue = $state<QueueState>({ items: [], current: null });
   /** `Date.now()` when `state.position` was received, to interpolate between events. */

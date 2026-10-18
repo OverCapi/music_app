@@ -553,7 +553,7 @@ impl Mixes {
     fn input(&self) -> AppResult<MixInput> {
         let profile = self.taste.profile()?;
         let library = self.library.tracks()?;
-        let plays = self.history.recent(HISTORY_LIMIT)?;
+        let plays = self.history.recent_music(HISTORY_LIMIT)?;
         let disliked_ids = self.feedback.disliked_youtube_ids()?;
         let disliked_artists = self.feedback.disliked_artists()?;
         let liked_ids = self.feedback.liked_youtube_ids()?;

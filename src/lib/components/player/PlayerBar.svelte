@@ -2,6 +2,7 @@
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { player } from "#lib/stores/player.svelte.ts";
   import { library } from "#lib/stores/library.svelte.ts";
+  import { lives } from "#lib/stores/lives.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
   import { fileName, formatTime } from "#lib/format.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
@@ -15,6 +16,8 @@
   let scrubValue = $state(0);
 
   const s = $derived(player.state);
+  // A live plays outside the queue: no progress bar, no seeking.
+  const live = $derived(s.group_mode ? null : s.live);
   const track = $derived(s.track_id !== null ? library.byId.get(s.track_id) : undefined);
 
   // In a listening group the controls drive the shared playback, not the local queue.
@@ -113,6 +116,20 @@
       {/if}
       <FeedbackButtons track={feedbackTrack} artist={feedbackArtist} />
       <span class="badge" title="Lecture synchronisée avec le groupe d'écoute">Groupe</span>
+    {:else if live}
+      <div class="cover" aria-hidden="true">
+        <img
+          src={live.thumbnail}
+          alt=""
+          onerror={(e) => ((e.currentTarget as HTMLElement).style.display = "none")}
+        />
+        <Icon name="live" size={24} />
+      </div>
+      <div class="meta">
+        <span class="title" title={live.title}>{live.title}</span>
+        <span class="artist">{live.channel ?? "Chaîne inconnue"}</span>
+      </div>
+      <span class="badge live" title="Direct YouTube">En direct</span>
     {:else if s.path || s.loading}
       <div class="cover" aria-hidden="true">
         {#key coverSrc}
@@ -164,7 +181,7 @@
       <button
         class="icon"
         onclick={previous}
-        disabled={groupMode ? !canSeek : s.current === null}
+        disabled={groupMode ? !canSeek : s.current === null || live !== null}
         aria-label={groupMode ? "Revenir au début" : "Précédent"}
         title={groupMode ? "Revenir au début" : "Précédent"}
       >
@@ -175,7 +192,7 @@
         onclick={togglePlay}
         disabled={groupMode
           ? (group.state?.queue.length ?? 0) === 0
-          : player.queue.items.length === 0 && library.tracks.length === 0}
+          : live === null && player.queue.items.length === 0 && library.tracks.length === 0}
         aria-label={playing ? "Pause" : "Lecture"}
         title={playing ? "Pause" : "Lecture"}
       >
@@ -205,22 +222,36 @@
       {/if}
     </div>
 
-    <div class="progress">
-      <span class="time">{formatTime(position)}</span>
-      <Slider
-        value={position}
-        max={duration}
-        step={0.1}
-        disabled={!canSeek}
-        oninput={scrub}
-        onchange={seek}
-        label="Position"
-      />
-      <span class="time">{formatTime(duration)}</span>
-    </div>
+    {#if !live}
+      <div class="progress">
+        <span class="time">{formatTime(position)}</span>
+        <Slider
+          value={position}
+          max={duration}
+          step={0.1}
+          disabled={!canSeek}
+          oninput={scrub}
+          onchange={seek}
+          label="Position"
+        />
+        <span class="time">{formatTime(duration)}</span>
+      </div>
+    {/if}
   </div>
 
   <div class="volume">
+    {#if live}
+      <button
+        class="icon"
+        class:active={lives.videoOpen}
+        onclick={() => (lives.videoOpen = !lives.videoOpen)}
+        aria-label="Voir la vidéo"
+        aria-pressed={lives.videoOpen}
+        title="Voir la vidéo"
+      >
+        <Icon name="expand" />
+      </button>
+    {/if}
     <button
       class="icon"
       class:active={queueOpen}
@@ -281,6 +312,11 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+  }
+
+  .badge.live {
+    background: #e5252a;
+    color: #fff;
   }
 
   .cover {

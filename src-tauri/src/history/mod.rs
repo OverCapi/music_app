@@ -30,6 +30,8 @@ pub enum PlaySource {
     Group,
     /// Listen started from a generated mix or from the discoveries.
     Mix,
+    /// A YouTube live stream. Shown in the recent plays, ignored by recommendations.
+    Live,
 }
 
 impl PlaySource {
@@ -40,6 +42,7 @@ impl PlaySource {
             Self::Autoplay => "autoplay",
             Self::Group => "group",
             Self::Mix => "mix",
+            Self::Live => "live",
         }
     }
 
@@ -50,6 +53,7 @@ impl PlaySource {
             "autoplay" => Self::Autoplay,
             "group" => Self::Group,
             "mix" => Self::Mix,
+            "live" => Self::Live,
             _ => Self::Library,
         }
     }
@@ -61,6 +65,12 @@ pub enum PlayedTrack {
     Library(TrackId),
     /// Group tracks are temp files, not in the library.
     Group {
+        youtube_id: String,
+        title: String,
+        artist: Option<String>,
+    },
+    /// A live stream: not in the library either.
+    Live {
         youtube_id: String,
         title: String,
         artist: Option<String>,
@@ -148,6 +158,11 @@ impl History {
                 youtube_id,
                 title,
                 artist,
+            }
+            | PlayedTrack::Live {
+                youtube_id,
+                title,
+                artist,
             } => (
                 None,
                 Some(youtube_id.clone()),
@@ -176,9 +191,19 @@ impl History {
 
     /// The latest listens, newest first.
     pub fn recent(&self, limit: u32) -> AppResult<Vec<Play>> {
+        self.recent_where("1", limit)
+    }
+
+    /// Like [`History::recent`] without live streams: what recommendations learn from.
+    pub fn recent_music(&self, limit: u32) -> AppResult<Vec<Play>> {
+        self.recent_where("source != 'live'", limit)
+    }
+
+    fn recent_where(&self, condition: &str, limit: u32) -> AppResult<Vec<Play>> {
         let conn = self.db.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM plays ORDER BY started_at DESC, id DESC LIMIT ?1"
+            "SELECT {COLUMNS} FROM plays WHERE {condition}
+             ORDER BY started_at DESC, id DESC LIMIT ?1"
         ))?;
         let plays = stmt
             .query_map([limit], play_from_row)?
@@ -285,6 +310,25 @@ mod tests {
     }
 
     #[test]
+    fn live_plays_are_recorded_but_not_used_for_recommendations() {
+        let (_, _, history) = setup();
+        let mut play = finished(
+            PlayedTrack::Live {
+                youtube_id: "yt9".into(),
+                title: "Lofi".into(),
+                artist: None,
+            },
+            5,
+            60.0,
+        );
+        play.source = PlaySource::Live;
+        history.record(&play).unwrap();
+
+        assert_eq!(history.recent(10).unwrap()[0].source, PlaySource::Live);
+        assert!(history.recent_music(10).unwrap().is_empty());
+    }
+
+    #[test]
     fn short_plays_are_ignored() {
         let (_, lib, history) = setup();
         let id = insert_track(&lib, "/a.mp3");
@@ -354,6 +398,7 @@ mod tests {
             PlaySource::Autoplay,
             PlaySource::Group,
             PlaySource::Mix,
+            PlaySource::Live,
         ] {
             assert_eq!(PlaySource::parse(s.as_str()), s);
         }
