@@ -1,4 +1,5 @@
 import { commands, type Discovery, type Mix, type Play } from "#lib/bindings.ts";
+import { player } from "#lib/stores/player.svelte.ts";
 import { attempt } from "#lib/stores/toasts.svelte.ts";
 
 const RECENT_LIMIT = 20;
@@ -69,6 +70,12 @@ class Home {
     index: number,
   ) {
     return attempt(() => commands.playSuggestions(tracks, index));
+  }
+
+  /** Plays the whole list; with shuffle on, from a random track (like a playlist). */
+  playAll(tracks: Parameters<Home["play"]>[0]) {
+    if (tracks.length === 0) return;
+    return this.play(tracks, player.state.shuffle ? Math.floor(Math.random() * tracks.length) : 0);
   }
 }
 
