@@ -4,6 +4,7 @@ use super::{AudioHandle, PlayerState, QueueState, RepeatMode};
 use crate::error::AppResult;
 use crate::history::PlaySource;
 use crate::library::{Library, TrackId};
+use crate::lives::LiveStream;
 
 /// Replaces the queue with `track_ids` and plays `track_ids[start]`; `source` is
 /// where the listens come from (for the history).
@@ -64,6 +65,13 @@ pub fn get_player_state(audio: State<'_, AudioHandle>) -> PlayerState {
 #[specta::specta]
 pub fn play(audio: State<'_, AudioHandle>) -> AppResult<()> {
     audio.play()
+}
+
+/// Plays a live found with `search_lives` / `resolve_live_url`, outside the queue.
+#[tauri::command]
+#[specta::specta]
+pub fn play_live(audio: State<'_, AudioHandle>, stream: LiveStream) -> AppResult<()> {
+    audio.play_live(stream)
 }
 
 #[tauri::command]

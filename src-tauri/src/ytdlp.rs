@@ -26,6 +26,45 @@ pub fn video_url(youtube_id: &str) -> AppResult<String> {
     Ok(format!("https://music.youtube.com/watch?v={youtube_id}"))
 }
 
+/// `https://www.youtube.com/watch?v=<id>` (live streams), only for a valid id.
+pub fn watch_url(youtube_id: &str) -> AppResult<String> {
+    if !is_valid_youtube_id(youtube_id) {
+        return Err(AppError::invalid("Identifiant YouTube invalide"));
+    }
+    Ok(format!("https://www.youtube.com/watch?v={youtube_id}"))
+}
+
+/// `https://www.youtube.com/@<handle>/streams`, only for a valid channel handle.
+pub fn channel_streams_url(handle: &str) -> AppResult<String> {
+    let valid = (3..=30).contains(&handle.len())
+        && handle
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    if !valid {
+        return Err(AppError::invalid("Nom de chaîne YouTube invalide"));
+    }
+    Ok(format!("https://www.youtube.com/@{handle}/streams"))
+}
+
+/// A channel id: `UC` + 22 URL-safe base64 characters.
+pub fn is_valid_channel_id(id: &str) -> bool {
+    id.len() == 24
+        && id.starts_with("UC")
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+}
+
+/// `https://www.youtube.com/channel/<id>/streams`, only for a valid channel id.
+pub fn channel_id_streams_url(channel_id: &str) -> AppResult<String> {
+    if !is_valid_channel_id(channel_id) {
+        return Err(AppError::invalid("Identifiant de chaîne invalide"));
+    }
+    Ok(format!(
+        "https://www.youtube.com/channel/{channel_id}/streams"
+    ))
+}
+
 /// Radio URLs of a seed track, only for a valid id: the YouTube Music radio
 /// (`RDAMVM<id>`) first, then the classic YouTube Mix (`RD<id>`) as fallback.
 pub fn radio_urls(seed_id: &str) -> AppResult<[String; 2]> {
@@ -72,6 +111,48 @@ pub async fn run_json<T: DeserializeOwned>(args: &[&str]) -> AppResult<Vec<T>> {
         .lines()
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect())
+}
+
+/// yt-dlp writing the audio of a live stream to stdout (HLS as MPEG-TS), for
+/// `audio::live` to pipe into ffmpeg. Format 91 is the smallest HLS format, which
+/// has audio when no audio-only one exists. Synchronous: it runs on its own thread.
+pub fn live_audio_command(youtube_id: &str) -> AppResult<std::process::Command> {
+    let url = watch_url(youtube_id)?;
+    let mut cmd = std::process::Command::new(binary());
+    cmd.args(["--no-playlist", "--no-warnings", "-q", "--hls-use-mpegts"])
+        .args(["-f", "234/bestaudio/91", "-o", "-"])
+        .arg(url);
+    if let Some(node) = find_in_path("node") {
+        cmd.arg("--js-runtimes")
+            .arg(format!("node:{}", node.display()));
+    }
+    Ok(cmd)
+}
+
+/// URL of the HLS playlist of the video-only stream (720p at most) of a live, for the
+/// `live://` proxy. It expires after a few hours.
+pub async fn live_video_playlist_url(youtube_id: &str) -> AppResult<String> {
+    let url = watch_url(youtube_id)?;
+    let output = command(&[
+        "--no-playlist",
+        "-g",
+        "-f",
+        "232/best[vcodec!=none][acodec=none][height<=720]/best[height<=720]",
+        &url,
+    ])
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .output()
+    .await
+    .map_err(spawn_error)?;
+    if !output.status.success() {
+        return Err(failure(&String::from_utf8_lossy(&output.stderr)));
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .map(str::to_owned)
+        .ok_or_else(|| AppError::Tool("yt-dlp n'a renvoyé aucune URL vidéo".into()))
 }
 
 /// What a download reports while it runs.
@@ -192,7 +273,7 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-fn spawn_error(e: std::io::Error) -> AppError {
+pub(crate) fn spawn_error(e: std::io::Error) -> AppError {
     AppError::Tool(match e.kind() {
         std::io::ErrorKind::NotFound => {
             "yt-dlp est introuvable (ni dans le PATH, ni dans ~/Applications/yt-dlp)".into()
@@ -203,6 +284,9 @@ fn spawn_error(e: std::io::Error) -> AppError {
 
 /// The last non-empty stderr line is yt-dlp's actual error.
 fn failure(stderr: &str) -> AppError {
+    if stderr.contains("does not pass filter") {
+        return AppError::invalid("Impossible de télécharger un direct");
+    }
     let reason = stderr.lines().rev().find(|l| !l.trim().is_empty());
     AppError::Tool(format!(
         "yt-dlp a échoué : {}",
@@ -228,6 +312,35 @@ mod tests {
         );
         assert!(playlist_url("PL&x=1").is_err());
         assert!(playlist_url("").is_err());
+    }
+
+    #[test]
+    fn live_urls_only_from_valid_ids_and_handles() {
+        assert_eq!(
+            watch_url("jfKfPfyJRdk").unwrap(),
+            "https://www.youtube.com/watch?v=jfKfPfyJRdk"
+        );
+        assert!(watch_url("jfKfPfyJRdk&x=1").is_err());
+        assert_eq!(
+            channel_streams_url("LofiGirl").unwrap(),
+            "https://www.youtube.com/@LofiGirl/streams"
+        );
+        for bad in ["", "ab", "a/b/c", "x?y=1", "a b c"] {
+            assert!(channel_streams_url(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn channel_ids() {
+        assert!(is_valid_channel_id("UCSJ4gkVC6NrvII8umztf0Ow"));
+        for bad in [
+            "",
+            "UCshort",
+            "XXSJ4gkVC6NrvII8umztf0Ow",
+            "UCSJ4gkVC6NrvII8umztf0O/",
+        ] {
+            assert!(channel_id_streams_url(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

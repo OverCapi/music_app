@@ -66,6 +66,8 @@ fn source_weight(source: PlaySource) -> f64 {
         PlaySource::Group => GROUP_WEIGHT,
         PlaySource::Autoplay => AUTOPLAY_WEIGHT,
         PlaySource::Library | PlaySource::Playlist | PlaySource::Mix => DEFAULT_WEIGHT,
+        // Never reaches the taste profile (see `History::recent_music`).
+        PlaySource::Live => 0.0,
     }
 }
 
@@ -242,7 +244,7 @@ impl Taste {
     }
 
     pub fn profile(&self) -> AppResult<TasteProfile> {
-        let plays = self.history.recent(HISTORY_LIMIT)?;
+        let plays = self.history.recent_music(HISTORY_LIMIT)?;
         let feedback = self.feedback.state()?;
         Ok(compute(&plays, &feedback, now_secs()))
     }

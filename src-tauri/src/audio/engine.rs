@@ -15,6 +15,7 @@ use tauri::AppHandle;
 use tauri_specta::Event;
 
 use super::listen::Listen;
+use super::live::{LiveError, LiveSource};
 use super::opus::OpusSource;
 use super::{
     GroupEndedCallback, GroupStart, PlayerChanged, PlayerState, QueueChanged, QueueItem,
@@ -24,6 +25,7 @@ use crate::db::now_secs;
 use crate::error::{AppError, AppResult};
 use crate::history::{PlayRecorder, PlaySource, PlayedTrack};
 use crate::library::TrackId;
+use crate::lives::LiveStream;
 
 type TrackSource = Box<dyn Source + Send>;
 
@@ -37,6 +39,8 @@ const END_MARGIN_SECS: f64 = 0.5;
 pub(super) enum AudioCommand {
     /// Load and play `queue[index]` (skipping unreadable files).
     PlayIndex(usize),
+    /// Stream a live, outside the queue.
+    PlayLive(LiveStream),
     Play,
     Pause,
     Stop,
@@ -113,6 +117,7 @@ fn run(parts: EngineParts) {
         waiting: None,
         fetching: HashSet::new(),
         listen: None,
+        live_error: None,
         group: None,
         app,
         published: PlayerState::default(),
@@ -187,6 +192,8 @@ struct Engine {
     fetching: HashSet<TrackId>,
     /// Listen of the track loaded in `player`, handed to `record` when it ends.
     listen: Option<Listen>,
+    /// Set by the feeder thread of the live being streamed when it gives up.
+    live_error: Option<LiveError>,
     /// Set while a listening group drives playback.
     group: Option<GroupMode>,
     app: AppHandle,
@@ -216,6 +223,7 @@ impl Engine {
         let is_local = matches!(
             cmd,
             AudioCommand::PlayIndex(_)
+                | AudioCommand::PlayLive(_)
                 | AudioCommand::Play
                 | AudioCommand::Pause
                 | AudioCommand::Stop
@@ -230,14 +238,23 @@ impl Engine {
                 self.shared().status.error = None;
                 self.load_from(index);
             }
+            AudioCommand::PlayLive(live) => self.play_live(live),
             AudioCommand::Play => {
-                if let Some(p) = &self.player {
+                if self.shared().status.live.is_some() && self.player.is_none() {
+                    // Paused live: rejoin the stream where it is now.
+                    self.start_live_stream();
+                } else if let Some(p) = &self.player {
                     p.play();
+                    self.resume_listen();
                 }
-                self.resume_listen();
             }
             AudioCommand::Pause => {
-                if let Some(p) = &self.player {
+                if self.shared().status.live.is_some() {
+                    // No pausing a live: stop the stream (and its processes).
+                    self.player = None;
+                    self.live_error = None;
+                    self.shared().status.playing = false;
+                } else if let Some(p) = &self.player {
                     p.pause();
                 }
                 self.pause_listen();
@@ -472,6 +489,57 @@ impl Engine {
         }
     }
 
+    /// Starts a live. The queue and its current track are left as they are.
+    fn play_live(&mut self, live: LiveStream) {
+        // Ends the previous listen.
+        self.unload();
+        self.listen = Some(Listen::new(
+            PlayedTrack::Live {
+                youtube_id: live.id.clone(),
+                title: live.title.clone(),
+                artist: live.channel.clone(),
+            },
+            PlaySource::Live,
+            now_secs(),
+            0.0,
+        ));
+        {
+            let mut s = self.shared();
+            s.status.live = Some(live);
+            s.status.track_id = None;
+            s.status.path = None;
+            s.status.duration = 0.0;
+            s.status.error = None;
+            s.status.loaded = true;
+        }
+        self.start_live_stream();
+    }
+
+    /// Streams the live of `status.live` (new start, or resume after a pause).
+    fn start_live_stream(&mut self) {
+        let Some(id) = self.shared().status.live.as_ref().map(|l| l.id.clone()) else {
+            return;
+        };
+        match LiveSource::start(&id) {
+            Ok((source, error)) => {
+                let player = Player::connect_new(self.device.mixer());
+                let mut s = self.shared.lock().unwrap();
+                player.set_volume(s.status.volume);
+                player.append(source);
+                s.status.playing = true;
+                s.status.position = 0.0;
+                drop(s);
+                self.player = Some(player);
+                self.live_error = Some(error);
+                self.resume_listen();
+            }
+            Err(e) => {
+                self.unload();
+                self.shared().status.error = Some(e.to_string());
+            }
+        }
+    }
+
     /// Plays `queue[index]`, skipping forward past files that fail to open. A track
     /// without a file is downloaded first (the player shows it as loading).
     fn load_from(&mut self, mut index: usize) {
@@ -508,6 +576,8 @@ impl Engine {
                     player.set_volume(s.status.volume);
                     player.append(source);
                     self.player = Some(player);
+                    self.live_error = None;
+                    s.status.live = None;
                     s.queue.set_current(index);
                     s.queue_changed();
                     s.status.track_id = Some(item.track_id);
@@ -537,8 +607,10 @@ impl Engine {
     fn unload(&mut self) {
         self.finish_listen(false);
         self.player = None;
+        self.live_error = None;
         self.waiting = None;
         let mut s = self.shared();
+        s.status.live = None;
         s.status.playing = false;
         s.status.loaded = false;
         s.status.loading = false;
@@ -656,6 +728,15 @@ impl Engine {
     }
 
     fn sync_state(&mut self) {
+        let live_error = self
+            .live_error
+            .as_ref()
+            .and_then(|e| e.lock().unwrap().take());
+        if let Some(message) = live_error {
+            self.unload();
+            self.shared().status.error = Some(message);
+            return;
+        }
         let Some(p) = &self.player else { return };
         if p.empty() && self.group.is_some() {
             // Group mode: no advance, the group client decides what comes next.
@@ -680,7 +761,9 @@ impl Engine {
             let position = p.get_pos().as_secs_f64();
             let mut s = self.shared.lock().unwrap();
             s.status.playing = playing;
-            s.status.position = position;
+            if s.status.live.is_none() {
+                s.status.position = position;
+            }
         }
     }
 }

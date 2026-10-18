@@ -23,6 +23,8 @@ export const commands = {
 	getQueue: () => __TAURI_INVOKE<QueueState>("get_queue"),
 	getPlayerState: () => __TAURI_INVOKE<PlayerState>("get_player_state"),
 	play: () => __TAURI_INVOKE<null>("play"),
+	/**  Plays a live found with `search_lives` / `resolve_live_url`, outside the queue. */
+	playLive: (stream: LiveStream) => __TAURI_INVOKE<null>("play_live", { stream }),
 	pause: () => __TAURI_INVOKE<null>("pause"),
 	stop: () => __TAURI_INVOKE<null>("stop"),
 	next: () => __TAURI_INVOKE<null>("next"),
@@ -100,6 +102,15 @@ export const commands = {
 	 *  `SyncProgress` events.
 	 */
 	syncYoutubeMusic: () => __TAURI_INVOKE<SyncReport>("sync_youtube_music"),
+	searchLives: (query: string) => __TAURI_INVOKE<LiveStream[]>("search_lives", { query }),
+	resolveLiveUrl: (url: string) => __TAURI_INVOKE<LiveStream[]>("resolve_live_url", { url }),
+	searchLiveChannels: (query: string) => __TAURI_INVOKE<LiveChannel[]>("search_live_channels", { query }),
+	getChannelLives: (channelId: string) => __TAURI_INVOKE<LiveStream[]>("get_channel_lives", { channelId }),
+	getFavoriteChannels: () => __TAURI_INVOKE<LiveChannel[]>("get_favorite_channels"),
+	/**  Returns the updated list. */
+	addFavoriteChannel: (channel: LiveChannel) => __TAURI_INVOKE<LiveChannel[]>("add_favorite_channel", { channel }),
+	/**  Returns the updated list. */
+	removeFavoriteChannel: (id: string) => __TAURI_INVOKE<LiveChannel[]>("remove_favorite_channel", { id }),
 };
 
 /** Events */
@@ -207,6 +218,25 @@ export type LibraryChanged = {
 	tracks: Track[],
 };
 
+export type LiveChannel = {
+	/**  YouTube channel id (`UC…`, validated). */
+	id: string,
+	name: string,
+	/**  `@handle`, when known. */
+	handle: string | null,
+	thumbnail: string,
+	followers: number | null,
+};
+
+export type LiveStream = {
+	/**  YouTube video id (validated). */
+	id: string,
+	title: string,
+	channel: string | null,
+	thumbnail: string,
+	viewers: number | null,
+};
+
 export type Member = {
 	username: string,
 	/**  Has downloaded the current track. */
@@ -258,7 +288,9 @@ export type PlaySource = "library" | "playlist" |
 /**  Random track picked because the queue ran out. */
 "autoplay" | "group" | 
 /**  Listen started from a generated mix or from the discoveries. */
-"mix";
+"mix" | 
+/**  A YouTube live stream. Shown in the recent plays, ignored by recommendations. */
+"live";
 
 export type Playback = { status: "idle" } | { status: "preparing"; deadline_ms: number } | { status: "playing"; position: number | null; at_ms: number } | { status: "paused"; position: number | null };
 
@@ -289,6 +321,11 @@ export type PlayerState = {
 	/**  Next track is picked at random in the queue. */
 	shuffle: boolean,
 	repeat: RepeatMode,
+	/**
+	 *  A live stream is loaded (playing, or paused: resuming rejoins the live). It
+	 *  plays outside the queue, which is kept. `duration` is 0 and seeking is refused.
+	 */
+	live: LiveStream | null,
 };
 
 export type Playlist = {

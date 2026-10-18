@@ -15,6 +15,7 @@ mod feedback;
 mod group;
 mod history;
 mod library;
+mod lives;
 mod mixes;
 mod playlists;
 mod radio;
@@ -59,6 +60,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             audio::commands::get_queue,
             audio::commands::get_player_state,
             audio::commands::play,
+            audio::commands::play_live,
             audio::commands::pause,
             audio::commands::stop,
             audio::commands::next,
@@ -107,6 +109,13 @@ fn specta_builder() -> Builder<tauri::Wry> {
             sync::commands::get_sync_settings,
             sync::commands::set_ytmusic_browser,
             sync::commands::sync_youtube_music,
+            lives::commands::search_lives,
+            lives::commands::resolve_live_url,
+            lives::commands::search_live_channels,
+            lives::commands::get_channel_lives,
+            lives::commands::get_favorite_channels,
+            lives::commands::add_favorite_channel,
+            lives::commands::remove_favorite_channel,
         ])
         .events(collect_events![
             audio::PlayerChanged,
@@ -208,6 +217,17 @@ pub fn run() {
                 responder.respond(response.expect("static response parts are valid"));
             });
         })
+        // `live://localhost/<id>.m3u8`: video of a live, relayed with CORS headers.
+        .register_asynchronous_uri_scheme_protocol("live", |ctx, request, responder| {
+            let proxy = ctx
+                .app_handle()
+                .state::<lives::proxy::LiveProxy>()
+                .inner()
+                .clone();
+            tauri::async_runtime::spawn(async move {
+                responder.respond(proxy.handle(request).await);
+            });
+        })
         .setup(move |app| {
             builder.mount_events(app);
             let handle = app.handle().clone();
@@ -217,6 +237,8 @@ pub fn run() {
             let library = Library::new(db.clone(), Some(handle.clone()));
             let history = History::new(db.clone());
             let feedback = Feedback::new(db.clone(), Some(handle.clone()));
+            app.manage(lives::proxy::LiveProxy::new());
+            app.manage(lives::Favorites::new(db.clone()));
             app.manage(feedback.clone());
             let radio = radio::Radio::new(db.clone());
             app.manage(radio.clone());

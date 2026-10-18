@@ -275,9 +275,12 @@ pub async fn download(
     mut on_progress: impl FnMut(DownloadStatus, Option<f64>) + Send,
 ) -> AppResult<PathBuf> {
     let url = ytdlp::video_url(youtube_id)?;
-    let args: [&OsStr; 11] = [
+    let args: [&OsStr; 13] = [
         url.as_ref(),
         "--no-playlist".as_ref(),
+        // A live never ends, so it could never finish downloading.
+        "--break-match-filters".as_ref(),
+        "!is_live".as_ref(),
         "-x".as_ref(),
         "--audio-format".as_ref(),
         "opus".as_ref(),

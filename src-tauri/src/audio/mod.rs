@@ -19,6 +19,7 @@
 pub mod commands;
 mod engine;
 mod listen;
+mod live;
 mod opus;
 mod queue;
 
@@ -26,13 +27,14 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
-use group_protocol::MAX_POSITION_SECS;
+use group_protocol::{MAX_POSITION_SECS, is_valid_youtube_id};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
 use crate::history::{PlayRecorder, PlaySource, PlayedTrack};
 use crate::library::TrackId;
+use crate::lives::LiveStream;
 use engine::AudioCommand;
 use queue::Queue;
 
@@ -109,6 +111,9 @@ pub struct PlayerState {
     /// Next track is picked at random in the queue.
     pub shuffle: bool,
     pub repeat: RepeatMode,
+    /// A live stream is loaded (playing, or paused: resuming rejoins the live). It
+    /// plays outside the queue, which is kept. `duration` is 0 and seeking is refused.
+    pub live: Option<LiveStream>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, specta::Type)]
@@ -287,6 +292,15 @@ impl AudioHandle {
         self.send(cmd)
     }
 
+    /// Plays a live stream outside the queue; "next" leaves it for the queue.
+    pub fn play_live(&self, stream: LiveStream) -> AppResult<()> {
+        if !is_valid_youtube_id(&stream.id) {
+            return Err(AppError::invalid("Identifiant YouTube invalide"));
+        }
+        self.local().map(drop)?;
+        self.send(AudioCommand::PlayLive(stream))
+    }
+
     pub fn pause(&self) -> AppResult<()> {
         self.local().map(drop)?;
         self.send(AudioCommand::Pause)
@@ -316,6 +330,9 @@ impl AudioHandle {
     pub fn previous(&self) -> AppResult<()> {
         let cmd = {
             let s = self.local()?;
+            if s.status.live.is_some() {
+                return Ok(());
+            }
             match s.queue.current() {
                 Some(c) if c > 0 && s.status.position <= RESTART_THRESHOLD_SECS => {
                     AudioCommand::PlayIndex(c - 1)
@@ -339,7 +356,11 @@ impl AudioHandle {
     }
 
     pub fn seek(&self, secs: f64) -> AppResult<()> {
-        self.local().map(drop)?;
+        if self.local()?.status.live.is_some() {
+            return Err(AppError::invalid(
+                "Impossible de se déplacer dans un direct",
+            ));
+        }
         self.send(AudioCommand::Seek(clamp_position(secs)))
     }
 
