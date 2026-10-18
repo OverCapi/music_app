@@ -42,3 +42,8 @@ jobs:
         if: runner.os == 'Linux'
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+        if: runner.os != 'Windows'
+      # The app's unit tests can't start on Windows (STATUS_ENTRYPOINT_NOT_FOUND: tauri test
+      # binaries lack the common-controls v6 manifest); clippy --all-targets still compiles them.
+      - run: cargo test --workspace --exclude music_app
+        if: runner.os == 'Windows'
