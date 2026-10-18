@@ -31,7 +31,7 @@ rusqlite_migration.workspace = true
 rodio = { version = "0.22", default-features = false, features = ["playback", "symphonia-mp3"] }
 lofty = "0.25"
 symphonia = { version = "0.5", default-features = false, features = ["ogg"] }
-symphonia-adapter-libopus = { version = "0.2", default-features = false }
+symphonia-adapter-libopus = { version = "0.2", default-features = false, features = ["bundled"] }
 tokio = { workspace = true, features = ["process", "io-util", "sync", "rt", "time", "macros", "fs"] }
 fastrand = "2"
 trash = "5"

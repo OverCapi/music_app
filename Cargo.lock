@@ -461,6 +461,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmake"
+version = "0.1.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75443c44cd6b379beb8c5b45d85d0773baf31cce901fe7bb252f4eff3008ef7d"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "cmov"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2654,6 +2663,9 @@ name = "opusic-sys"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9d1ecdf206421bc74343ab3bb2f30ad2abbfee41fa341f7181fecbaf957769a"
+dependencies = [
+ "cmake",
+]
 
 [[package]]
 name = "pango"

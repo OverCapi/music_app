@@ -24,7 +24,7 @@ cargo run -p music-group-server   # env: MUSIC_SERVER_ADDR (127.0.0.1:8787), MUS
 - Single Rust test: `cargo test -p <crate> <test_name>`; server integration tests live in `crates/server/tests/api.rs` (`cargo test -p music-group-server --test api`).
 - **`tauri::generate_context!` needs a `build/` folder**: on a fresh checkout run `mkdir -p build` before any cargo command (CI does this too).
 - Second app instance for testing groups: `MUSIC_APP_PROFILE=b target/debug/music_app` — uses the first instance's Vite dev server, which must stay open; profile gets separate data/cache dirs.
-- Runtime requirements: `yt-dlp` (PATH or `~/Applications/yt-dlp/yt-dlp`), `ffmpeg`, `libopus`, `node` (passed to yt-dlp as JS runtime).
+- Runtime requirements: `yt-dlp`, `ffmpeg`, `node` (passed to yt-dlp as JS runtime), found via `ytdlp::search_path()`; libopus is bundled (needs `cmake` to build).
 - `server.db*` at the repo root are runtime artifacts of the local server — never commit them.
 
 ## Layout
