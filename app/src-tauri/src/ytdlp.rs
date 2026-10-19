@@ -1,14 +1,16 @@
 //! The only place that runs the external `yt-dlp` binary (never through a shell).
 //!
-//! The binary is looked up in PATH, then `~/Applications/yt-dlp/yt-dlp`. If `node`
-//! is in PATH it is passed to yt-dlp as JS runtime. Used by `search` and `downloads`.
+//! The binary is looked up in PATH plus the usual install folders ([`search_path`]),
+//! because an app started from the desktop has a minimal PATH. If `node` is found it
+//! is passed to yt-dlp as JS runtime. Used by `search` and `downloads`.
 //!
 //! URLs are always built here from a validated YouTube id
 //! ([`group_protocol::is_valid_youtube_id`]), never taken from user input.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::OnceLock;
 
 use group_protocol::is_valid_youtube_id;
 use serde::de::DeserializeOwned;
@@ -118,7 +120,7 @@ pub async fn run_json<T: DeserializeOwned>(args: &[&str]) -> AppResult<Vec<T>> {
 /// has audio when no audio-only one exists. Synchronous: it runs on its own thread.
 pub fn live_audio_command(youtube_id: &str) -> AppResult<std::process::Command> {
     let url = watch_url(youtube_id)?;
-    let mut cmd = std::process::Command::new(binary());
+    let mut cmd = tool_command(binary());
     cmd.args(["--no-playlist", "--no-warnings", "-q", "--hls-use-mpegts"])
         .args(["-f", "234/bestaudio/91", "-o", "-"])
         .arg(url);
@@ -244,7 +246,7 @@ fn parse_line(line: &str) -> Option<Line<'_>> {
 
 /// yt-dlp with the common options; killed when dropped (aborting a task stops it).
 fn command<S: AsRef<OsStr>>(args: &[S]) -> Command {
-    let mut cmd = Command::new(binary());
+    let mut cmd = Command::from(tool_command(binary()));
     cmd.args(args).arg("--no-warnings");
     // Recent YouTube extraction wants a JS runtime; yt-dlp only looks for deno by default.
     if let Some(node) = find_in_path("node") {
@@ -255,28 +257,60 @@ fn command<S: AsRef<OsStr>>(args: &[S]) -> Command {
     cmd
 }
 
-/// `yt-dlp` from PATH, else the standalone binary in ~/Applications
-/// (apps started from the desktop don't always have ~/.local/bin in PATH).
+/// `yt-dlp` found in [`search_path`], else the bare name (the spawn error then says it is missing).
 fn binary() -> PathBuf {
-    find_in_path("yt-dlp")
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .map(|home| PathBuf::from(home).join("Applications/yt-dlp/yt-dlp"))
-        })
-        .unwrap_or_else(|| PathBuf::from("yt-dlp"))
+    find_in_path("yt-dlp").unwrap_or_else(|| PathBuf::from("yt-dlp"))
 }
 
-fn find_in_path(name: &str) -> Option<PathBuf> {
-    let paths = std::env::var_os("PATH")?;
-    std::env::split_paths(&paths)
-        .map(|dir| dir.join(name))
+/// PATH plus the folders where these tools usually live: apps started from the
+/// desktop (Finder, a launcher) don't inherit the shell's PATH, so Homebrew's or
+/// `~/.local/bin` would be missing.
+pub(crate) fn search_path() -> &'static OsString {
+    static PATH: OnceLock<OsString> = OnceLock::new();
+    PATH.get_or_init(|| {
+        let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).collect())
+            .unwrap_or_default();
+        if cfg!(windows) {
+            if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                dirs.push(PathBuf::from(local).join("Microsoft/WinGet/Links"));
+            }
+        } else {
+            dirs.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
+            if let Some(home) = std::env::home_dir() {
+                dirs.extend([".local/bin", "Applications/yt-dlp"].map(|d| home.join(d)));
+            }
+        }
+        std::env::join_paths(dirs).unwrap_or_default()
+    })
+}
+
+/// `name` (`.exe` added on Windows) in [`search_path`].
+pub(crate) fn find_in_path(name: &str) -> Option<PathBuf> {
+    let file = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    };
+    std::env::split_paths(search_path())
+        .map(|dir| dir.join(&file))
         .find(|p| p.is_file())
+}
+
+/// A command for an external tool: [`search_path`] as PATH (yt-dlp runs ffmpeg
+/// itself) and no console window on Windows.
+pub(crate) fn tool_command(program: impl AsRef<OsStr>) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    cmd.env("PATH", search_path());
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000); // CREATE_NO_WINDOW
+    cmd
 }
 
 pub(crate) fn spawn_error(e: std::io::Error) -> AppError {
     AppError::Tool(match e.kind() {
         std::io::ErrorKind::NotFound => {
-            "yt-dlp est introuvable (ni dans le PATH, ni dans ~/Applications/yt-dlp)".into()
+            "yt-dlp est introuvable : installe-le (voir le README) puis relance l'app".into()
         }
         _ => format!("Impossible de lancer yt-dlp : {e}"),
     })

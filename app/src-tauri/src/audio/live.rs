@@ -8,8 +8,7 @@
 //! giving up with an error.
 
 use std::io::Read;
-use std::os::unix::process::CommandExt;
-use std::process::{Child, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdout, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
 use std::sync::{Arc, Mutex};
@@ -62,8 +61,15 @@ impl Control {
 /// Kills a process and what it started (yt-dlp has its own process group, because it
 /// may run ffmpeg itself).
 fn kill(mut child: Child) {
-    let _ = Command::new("kill")
+    // Also kills ffmpeg when yt-dlp started it: the whole process group on unix, the tree on Windows.
+    #[cfg(unix)]
+    let _ = std::process::Command::new("kill")
         .args(["-KILL", "--", &format!("-{}", child.id())])
+        .stderr(Stdio::null())
+        .status();
+    #[cfg(windows)]
+    let _ = ytdlp::tool_command("taskkill")
+        .args(["/F", "/T", "/PID", &child.id().to_string()])
         .stderr(Stdio::null())
         .status();
     let _ = child.kill();
@@ -140,34 +146,38 @@ fn stream_once(
     control: &Control,
 ) -> Result<Option<bool>, String> {
     let mut ytdlp = ytdlp::live_audio_command(id).map_err(|e| e.to_string())?;
-    let mut ytdlp = ytdlp
+    ytdlp
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .stdin(Stdio::null())
-        .process_group(0)
+        .stdin(Stdio::null());
+    // Own process group, so `kill` takes ffmpeg down with yt-dlp.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut ytdlp, 0);
+    let mut ytdlp = ytdlp
         .spawn()
         .map_err(|e| ytdlp::spawn_error(e).to_string())?;
     let audio = ytdlp.stdout.take().expect("stdout is piped");
     if !control.track(ytdlp) {
         return Ok(None);
     }
-    let mut ffmpeg = Command::new("ffmpeg")
-        .args(["-v", "quiet", "-i", "pipe:0", "-vn", "-f", "f32le"])
-        .args([
-            "-ac",
-            &CHANNELS.to_string(),
-            "-ar",
-            &SAMPLE_RATE.to_string(),
-        ])
-        .arg("pipe:1")
-        .stdin(Stdio::from(audio))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => "ffmpeg est introuvable".to_owned(),
-            _ => format!("Impossible de lancer ffmpeg : {e}"),
-        })?;
+    let mut ffmpeg =
+        ytdlp::tool_command(ytdlp::find_in_path("ffmpeg").unwrap_or_else(|| "ffmpeg".into()))
+            .args(["-v", "quiet", "-i", "pipe:0", "-vn", "-f", "f32le"])
+            .args([
+                "-ac",
+                &CHANNELS.to_string(),
+                "-ar",
+                &SAMPLE_RATE.to_string(),
+            ])
+            .arg("pipe:1")
+            .stdin(Stdio::from(audio))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => "ffmpeg est introuvable".to_owned(),
+                _ => format!("Impossible de lancer ffmpeg : {e}"),
+            })?;
     let pcm = ffmpeg.stdout.take().expect("stdout is piped");
     if !control.track(ffmpeg) {
         return Ok(None);
@@ -191,8 +201,10 @@ fn forward(mut pcm: ChildStdout, tx: &SyncSender<Vec<Sample>>) -> bool {
         }
         received = true;
         let samples = bytes
-            .chunks_exact(4)
-            .map(|b| Sample::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| Sample::from_le_bytes(*b))
             .collect();
         if tx.send(samples).is_err() {
             return received;
@@ -271,8 +283,10 @@ mod tests {
         assert!(LiveSource::start("not an id").is_err());
     }
 
+    #[cfg(unix)]
     #[test]
     fn dropping_kills_the_processes() {
+        use std::process::Command;
         let control = Arc::new(Control::default());
         let child = Command::new("sleep").arg("30").spawn().unwrap();
         let pid = child.id();

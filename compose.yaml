@@ -1,5 +1,6 @@
 services:
   server:
+    image: ghcr.io/overcapi/music-group-server:latest
     build: .
     ports:
       - "8787:8787"
