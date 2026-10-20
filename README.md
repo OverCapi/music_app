@@ -20,29 +20,7 @@ Tauri 2 + SvelteKit 3 (Svelte 5) pour l'interface, Rust pour le backend (lecture
   - Chaque membre télécharge les sons localement, et la lecture démarre en même temps chez tout le monde.
   - Tous les membres peuvent ajouter, mettre en pause, avancer dans le son ou passer au suivant.
 
-## Installation
-
-Le script installe les dépendances (`yt-dlp`, `ffmpeg`, `node`) et la dernière [release](https://github.com/OverCapi/music_app/releases) : rien à compiler. Par défaut il installe le **client** ; `--server` installe uniquement le serveur de groupes (Docker), `--both` les deux.
-
-macOS / Linux :
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/OverCapi/music_app/master/install.sh | bash                   # client
-curl -fsSL https://raw.githubusercontent.com/OverCapi/music_app/master/install.sh | bash -s -- --server    # serveur
-```
-
-Windows (PowerShell) :
-
-```powershell
-irm https://raw.githubusercontent.com/OverCapi/music_app/master/install.ps1 -OutFile install.ps1
-.\install.ps1                   # client (-Mode server | both)
-```
-
-Depuis un clone, `./install.sh --from-source` compile l'app (Rust, Node, pnpm, dépendances Tauri installés au besoin) au lieu de télécharger la release. `--version vX.Y.Z` choisit une autre release.
-
-L'app n'est pas signée : sur macOS le script retire la quarantaine, sur Windows SmartScreen peut demander « Exécuter quand même ».
-
-### Développement : prérequis manuels
+## Prérequis
 
 - [Rust](https://rustup.rs/) (+ `cmake`, qui compile libopus), Node.js et [pnpm](https://pnpm.io/)
 - Dépendances Tauri pour Linux (`webkit2gtk-4.1`, etc.) et `alsa-lib`

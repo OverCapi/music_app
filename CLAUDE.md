@@ -37,7 +37,7 @@ cargo run -p music-group-server   # env: MUSIC_SERVER_ADDR (127.0.0.1:8787), MUS
 Second app instance for testing groups (uses the first instance's Vite dev server, needs a built debug binary):
 `MUSIC_APP_PROFILE=b target/debug/music_app` — the profile gets separate data/cache dirs (`<data>/profiles/b`).
 
-Runtime requirements: `yt-dlp`, `ffmpeg`, `node` (passed to yt-dlp as JS runtime if present), all looked up with `ytdlp::search_path()` (PATH + `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/Applications/yt-dlp`, WinGet links; an app started from the desktop has a minimal PATH). libopus is compiled in (`bundled`, needs `cmake`). Spawn external tools with `ytdlp::tool_command` (PATH + no console window on Windows). `install.sh` / `install.ps1` install client (release or `--from-source`) and/or the Docker server; `.github/workflows/ci.yml` runs the checks on macOS/Linux/Windows and `release.yml` (tag `v*`) publishes the app bundles and the `ghcr.io/overcapi/music-group-server` image.
+Runtime requirements: `yt-dlp`, `ffmpeg`, `node` (passed to yt-dlp as JS runtime if present), all looked up with `ytdlp::search_path()` (PATH + `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/Applications/yt-dlp`, WinGet links; an app started from the desktop has a minimal PATH). libopus is compiled in (`bundled`, needs `cmake`). Spawn external tools with `ytdlp::tool_command` (PATH + no console window on Windows).
 
 ## Architecture
 
