@@ -1,0 +1,3 @@
+ALTER TABLE playlists ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playlists ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+UPDATE playlists SET position = id;

@@ -1,265 +1,320 @@
 <script lang="ts">
+  /** Left panel: playlists, pinned first, drag to reorder (also across sections), collapsible.
+   * Order and pinning persist through `reorder_playlists` / `set_playlist_pinned`. */
   import { tick } from "svelte";
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
+  import { convertFileSrc } from "@tauri-apps/api/core";
+  import type { Playlist } from "#lib/bindings.ts";
   import { playlists } from "#lib/stores/playlists.svelte.ts";
-  import { group } from "#lib/stores/group.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { progressive } from "#lib/progressive.svelte.ts";
+  import { flip, liquid } from "#lib/motion.ts";
+  import { plural } from "#lib/format.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
 
-  // Search and settings live in the top bar, so they are not rail items.
-  const items = [
-    { href: resolve("/"), label: "Accueil", icon: "home" },
-    { href: resolve("/library"), label: "Bibliothèque", icon: "library" },
-    { href: resolve("/lives"), label: "Lives", icon: "live" },
-    { href: resolve("/group"), label: "Groupe d'écoute", icon: "group" },
-  ] as const;
+  type Entry = { id: number; pinned: boolean };
 
-  let creating = $state(false);
-  let newName = $state("");
-  let input = $state<HTMLInputElement>();
+  let list = $state<HTMLElement>();
+  let order = $state<Entry[]>([]);
+  let dragging = $state<number | null>(null);
+  let lock = 0;
 
-  /** Two-letter monogram of a playlist name. */
-  function initials(name: string) {
-    const words = name.trim().split(/\s+/);
-    return (words.length > 1 ? words[0][0] + words[1][0] : name.slice(0, 2)).toUpperCase();
-  }
+  // Local order mirrors the store until a drag commits it.
+  $effect(() => {
+    if (dragging === null) order = playlists.items.map((p) => ({ id: p.id, pinned: p.pinned }));
+  });
 
-  /** Stable tile hue per playlist; dark tile under light text, readable in every theme. */
-  function tileColor(id: number) {
-    return `hsl(${(id * 67) % 360} 38% 32%)`;
-  }
+  const byId = $derived(new Map(playlists.items.map((p) => [p.id, p])));
+  const section = (pinned: boolean) =>
+    order
+      .filter((e) => e.pinned === pinned)
+      .map((e) => byId.get(e.id)!)
+      .filter(Boolean);
+  const pinned = $derived(section(true));
+  const shownOthers = progressive(() => section(false).length, 25, 40);
+  const others = $derived(section(false));
 
-  async function startCreating() {
-    creating = true;
-    newName = "";
+  /** Moves the dragged entry to index `to`, joining the section `pin`. */
+  async function move(to: number, pin: boolean) {
+    const from = order.findIndex((e) => e.id === dragging);
+    if (from < 0) return;
+    const done = flip(list!);
+    const next = order.slice();
+    const [entry] = next.splice(from, 1);
+    next.splice(to, 0, { ...entry, pinned: pin });
+    order = next;
+    lock = performance.now() + 90;
     await tick();
-    input?.focus();
+    done();
   }
 
-  async function create(e: SubmitEvent) {
+  function over(e: DragEvent, id: number) {
     e.preventDefault();
-    if (!newName.trim()) return;
-    const playlist = await playlists.create(newName);
-    creating = false;
-    if (playlist) goto(resolve("/playlist/[id]", { id: String(playlist.id) }));
+    if (dragging === null || dragging === id || performance.now() < lock) return;
+    const from = order.findIndex((x) => x.id === dragging);
+    const to = order.findIndex((x) => x.id === id);
+    // Only swap once the pointer crosses the target's middle (no jitter).
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (from < to ? e.clientY < r.top + r.height / 2 : e.clientY > r.top + r.height / 2) return;
+    return move(to, order[to].pinned);
+  }
+
+  /** Dropping on a section title (also lets an empty section receive an item). */
+  function overTitle(e: DragEvent, pin: boolean) {
+    e.preventDefault();
+    if (dragging === null || performance.now() < lock) return;
+    const cur = order.find((x) => x.id === dragging);
+    if (!cur || cur.pinned === pin) return;
+    // Index just after the pinned entries (dragged one excluded): end of "Épinglées" or
+    // start of "Toutes".
+    return move(order.filter((x) => x.pinned && x.id !== dragging).length, pin);
+  }
+
+  async function end() {
+    const id = dragging;
+    dragging = null;
+    const entry = order.find((e) => e.id === id);
+    if (entry && byId.get(entry.id)?.pinned !== entry.pinned) {
+      await playlists.setPinned(entry.id, entry.pinned);
+    }
+    await playlists.reorder(order.map((e) => e.id));
+  }
+
+  async function create() {
+    const p = await playlists.create("Nouvelle playlist");
+    ui.sideOpen = true;
+    if (p) goto(resolve("/playlist/[id]", { id: String(p.id) }));
+  }
+
+  function covers(p: Playlist) {
+    return [0, 1, 2, 3].map((i) => p.track_ids[i]);
   }
 </script>
 
-<nav class="rail" aria-label="Navigation principale">
-  {#each items as item (item.href)}
-    {@const active = page.url.pathname === item.href}
-    <a
-      class="item"
-      class:active
-      href={item.href}
-      aria-label={item.label}
-      aria-current={active ? "page" : undefined}
-    >
-      <Icon name={item.icon} size={24} />
-      <span class="tip">{item.label}</span>
-      {#if item.icon === "group" && group.isActive}
-        <span
-          class="live"
-          class:offline={!group.view?.connected}
-          title={group.view?.connected ? "Dans un groupe" : "Reconnexion…"}
-        ></span>
-      {/if}
-    </a>
-  {/each}
-
-  <div class="divider"></div>
-
-  <div class="playlists">
-    {#each playlists.items as playlist (playlist.id)}
-      {@const href = resolve("/playlist/[id]", { id: String(playlist.id) })}
-      {@const active = page.url.pathname === href}
-      <a
-        class="tile"
-        class:active
-        {href}
-        style:background={tileColor(playlist.id)}
-        aria-label={playlist.name}
-        aria-current={active ? "page" : undefined}
-        title={`${playlist.name} · ${playlist.track_ids.length}`}
-      >
-        {initials(playlist.name)}
-      </a>
-    {/each}
-  </div>
-
-  <div class="create">
+<aside
+  class="panel glass"
+  class:drawer={ui.compact}
+  class:closed={ui.compact && !ui.sideOpen}
+  style:width="{ui.sideWidth}px"
+>
+  <header class:collapsed={!ui.sideExpanded}>
+    <span class="fade title" class:on={ui.sideExpanded}>Playlists</span>
     <button
-      class="add"
-      onclick={startCreating}
-      aria-label="Créer une playlist"
-      title="Créer une playlist"
+      class="halo-btn chev"
+      class:flipped={!ui.sideExpanded}
+      use:liquid
+      onclick={() => (ui.sideOpen = !ui.sideOpen)}
+      aria-label={ui.sideOpen ? "Replier" : "Déplier"}
     >
-      <Icon name="plus" size={20} />
+      <Icon name="chevronLeft" size={16} />
     </button>
-    {#if creating}
-      <form onsubmit={create}>
-        <input
-          class="field"
-          bind:this={input}
-          bind:value={newName}
-          placeholder="Nom de la playlist"
-          maxlength="100"
-          onblur={() => !newName.trim() && (creating = false)}
-          onkeydown={(e) => e.key === "Escape" && (creating = false)}
-        />
-      </form>
-    {/if}
+  </header>
+
+  <button class="row item new" use:liquid onclick={create}>
+    <span class="tile dashed"><Icon name="plus" size={16} /></span>
+    <span class="fade" class:on={ui.sideExpanded}>Nouvelle playlist</span>
+  </button>
+
+  <div class="list" bind:this={list}>
+    <div
+      class="section-title fade"
+      class:on={ui.sideExpanded}
+      role="presentation"
+      ondragover={(e) => overTitle(e, true)}
+    >
+      Épinglées
+    </div>
+    {#each pinned as p (p.id)}{@render item(p)}{/each}
+    <div
+      class="section-title fade"
+      class:on={ui.sideExpanded}
+      role="presentation"
+      ondragover={(e) => overTitle(e, false)}
+    >
+      Toutes
+    </div>
+    {#each others.slice(0, shownOthers.count) as p (p.id)}{@render item(p)}{/each}
   </div>
-</nav>
+</aside>
+
+{#snippet item(p: Playlist)}
+  {@const href = resolve("/playlist/[id]", { id: String(p.id) })}
+  <a
+    class="row item"
+    data-flip={p.id}
+    data-liquid
+    {href}
+    draggable="true"
+    use:liquid
+    ondragstart={(e) => {
+      e.dataTransfer!.effectAllowed = "move";
+      dragging = p.id;
+    }}
+    ondragover={(e) => over(e, p.id)}
+    ondragend={end}
+    aria-current={page.url.pathname === href ? "page" : undefined}
+  >
+    <span class="hl" class:on={page.url.pathname === href || dragging === p.id}></span>
+    <span class="tile mosaic">
+      {#each covers(p) as id, i (i)}
+        {#if id !== undefined}<img
+            src={convertFileSrc(String(id), "cover")}
+            alt=""
+            loading="lazy"
+          />{:else}<span></span>{/if}
+      {/each}
+    </span>
+    <span class="meta fade" class:on={ui.sideExpanded}>
+      <span class="name">{p.name}</span>
+      <span class="count">{plural(p.track_ids.length, "titre")}</span>
+    </span>
+  </a>
+{/snippet}
 
 <style>
-  .rail {
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    width: 72px;
-    min-height: 0;
-    box-sizing: border-box;
-    padding: 16px 0;
-    border-radius: 24px;
-    background: var(--surface);
-    box-shadow: var(--shadow-float);
-  }
-
-  .item,
-  .tile,
-  .add {
-    position: relative;
-    display: grid;
-    flex: none;
-    place-items: center;
-    width: 48px;
-    height: 48px;
-    padding: 0;
-    border-radius: 12px;
-  }
-
-  .item {
-    color: var(--muted);
-  }
-
-  .item:hover {
-    background: var(--surface-2);
-    color: var(--text);
-  }
-
-  .item.active {
-    background: var(--accent-soft);
-    color: var(--accent);
-  }
-
-  .tip {
+  .panel {
     position: absolute;
-    left: 60px;
-    top: 50%;
-    z-index: 10;
-    padding: 6px 10px;
-    border-radius: 8px;
-    background: var(--surface-2);
-    box-shadow: var(--shadow-float);
-    color: var(--text);
-    font-size: 0.8rem;
-    font-weight: 600;
-    white-space: nowrap;
+    top: 16px;
+    bottom: 16px;
+    left: 16px;
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: calc(var(--rs) + 10px);
+    transition: width 0.55s var(--ease-out);
+  }
+  .panel.drawer {
+    transition:
+      transform 0.55s var(--ease-out),
+      opacity 0.3s;
+  }
+  .panel.closed {
     opacity: 0;
     pointer-events: none;
-    transform: translateY(-50%);
-    transition: opacity 0.12s;
+    transform: translateX(calc(-100% - 24px));
   }
-
-  .item:hover .tip,
-  .item:focus-visible .tip {
-    opacity: 1;
-  }
-
-  .live {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--coral);
-    animation: pulse 1.6s ease-in-out infinite;
-  }
-
-  .live.offline {
-    background: var(--warning);
-  }
-
-  @keyframes pulse {
-    50% {
-      opacity: 0.45;
-    }
-  }
-
-  .divider {
+  header {
+    display: flex;
     flex: none;
-    width: 32px;
-    height: 1px;
-    margin: 8px 0;
-    background: var(--line);
+    align-items: center;
+    padding: 14px 14px 8px;
+    transition: padding 0.55s var(--ease-out);
   }
-
-  .playlists {
+  /* Collapsed panel is 66 px wide: the 36 px button sits exactly in the middle. */
+  header.collapsed {
+    padding-inline: 15px;
+  }
+  header.collapsed .title {
+    flex: 0 0 0;
+    padding: 0;
+  }
+  .title {
+    flex: 1;
+    padding-left: 4px;
+    color: var(--mute);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .chev :global(svg) {
+    transition: transform 0.5s;
+  }
+  .chev.flipped :global(svg) {
+    transform: rotate(180deg);
+  }
+  .list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
+    gap: 2px;
+    padding: 0 8px 12px;
+  }
+  .section-title {
+    flex: none;
+    padding: 12px 8px 6px;
+    white-space: nowrap;
+  }
+  .item {
+    flex: none;
+    display: flex;
     align-items: center;
-    gap: 8px;
-    min-height: 0;
-    /* Room for the active ring, which overflow would clip. */
-    padding: 3px;
-    overflow-y: auto;
-    scrollbar-width: none;
-  }
-
-  .tile {
-    color: #fff;
-    font-size: 0.8rem;
-    font-weight: 800;
-    transition: box-shadow 0.12s;
-  }
-
-  .tile:hover,
-  .tile.active {
-    box-shadow: 0 0 0 2px var(--accent);
-  }
-
-  .create {
-    position: relative;
-  }
-
-  .add {
-    border: 1px dashed var(--track);
+    gap: 12px;
+    padding: 4px;
     background: transparent;
-    color: var(--muted);
+    color: var(--fg);
+    text-align: left;
   }
-
-  .add:hover {
-    background: var(--surface-2);
-    color: var(--text);
+  .new {
+    margin: 0 8px 4px;
   }
-
-  form {
+  .hl {
     position: absolute;
-    left: 60px;
-    top: 0;
-    z-index: 10;
-    padding: 8px;
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: var(--shadow-float);
+    inset: 0;
+    border-radius: var(--rs);
+    background: var(--glass2);
+    box-shadow: inset 0 1px 0 var(--hi);
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
   }
-
-  input {
-    width: 220px;
+  .hl.on {
+    opacity: 1;
+  }
+  .tile {
+    position: relative;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    overflow: hidden;
+    border-radius: calc(var(--rs) - 2px);
+  }
+  .dashed {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    border: 1px dashed var(--mute);
+    color: var(--accent);
+  }
+  .mosaic {
+    display: grid;
+    grid-template: 1fr 1fr / 1fr 1fr;
+    background: var(--line);
+  }
+  .mosaic img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .fade {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .fade.on {
+    opacity: 1;
+    transition: opacity 0.35s 0.12s;
+  }
+  .meta {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .count {
+    color: var(--mute);
+    font-size: 12px;
   }
 </style>

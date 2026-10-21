@@ -1,15 +1,20 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { resolve } from "$app/paths";
-  import { convertFileSrc } from "@tauri-apps/api/core";
-  import type { MixCategory, Playlist, Track } from "#lib/bindings.ts";
+  import type { MixCategory } from "#lib/bindings.ts";
   import { home } from "#lib/stores/home.svelte.ts";
-  import { playlists } from "#lib/stores/playlists.svelte.ts";
   import { library } from "#lib/stores/library.svelte.ts";
   import { player } from "#lib/stores/player.svelte.ts";
   import { plural } from "#lib/format.ts";
-  import MediaCard from "#lib/components/home/MediaCard.svelte";
-  import Thumb from "#lib/components/home/Thumb.svelte";
+  import { trackCover, youtubeCover } from "#lib/covers.ts";
+  import Card from "#lib/components/ui/Card.svelte";
+  import Cover from "#lib/components/ui/Cover.svelte";
+  import IconButton from "#lib/components/ui/IconButton.svelte";
+  import MediaCard from "#lib/components/ui/MediaCard.svelte";
+  import MiniCard from "#lib/components/ui/MiniCard.svelte";
+  import Panel from "#lib/components/ui/Panel.svelte";
+  import PlayButton from "#lib/components/ui/PlayButton.svelte";
+  import Section from "#lib/components/ui/Section.svelte";
 
   const categories: { id: MixCategory; label: string }[] = [
     { id: "known", label: "Que du connu" },
@@ -42,11 +47,29 @@
   const hour = new Date().getHours();
   const greeting = hour < 5 || hour >= 18 ? "Bonsoir" : "Bonjour";
 
-  function tracksOf(playlist: Playlist): Track[] {
-    return playlist.track_ids
-      .map((id) => library.byId.get(id))
-      .filter((t): t is Track => t !== undefined);
+  // "Reprendre": what is loaded in the player, otherwise the last thing played.
+  const loaded = $derived(
+    player.state.track_id !== null ? library.byId.get(player.state.track_id) : undefined,
+  );
+  const resume = $derived(
+    loaded
+      ? { title: loaded.title, artist: loaded.artist, cover: trackCover(loaded.id) }
+      : playable[0]
+        ? {
+            title: playable[0].title,
+            artist: playable[0].artist,
+            cover: youtubeCover(playable[0].youtube_id),
+          }
+        : null,
+  );
+
+  function toggleResume() {
+    if (loaded) player.togglePlay();
+    else home.play(playable, 0);
   }
+
+  const covers = (tracks: { youtube_id: string }[]) =>
+    tracks.slice(0, 4).map((t) => youtubeCover(t.youtube_id));
 
   onMount(() => {
     home.load();
@@ -54,240 +77,239 @@
   });
 </script>
 
-<section class="view">
+<div class="page">
   <header>
-    <div>
-      <h1 class="greeting">{greeting}</h1>
-      <p class="muted">Tes playlists, tes mix et ce que tu as écouté récemment.</p>
-    </div>
-    <button
-      class="pill secondary"
-      onclick={() => home.load(true)}
+    <h1 class="greeting">{greeting}</h1>
+    <IconButton
+      icon="refresh"
+      label="Actualiser"
+      size={40}
       disabled={home.loadingMixes || home.loadingDiscoveries}
-    >
-      Actualiser
-    </button>
+      onclick={() => home.load(true)}
+    />
   </header>
 
-  <h2>Tes playlists</h2>
-  {#if playlists.items.length === 0}
-    <p class="status">Crée ta première playlist avec le bouton + du menu de gauche.</p>
-  {:else}
-    <div class="grid">
-      {#each playlists.items as playlist (playlist.id)}
-        {@const tracks = tracksOf(playlist)}
-        <MediaCard
-          title={playlist.name}
-          subtitle={plural(playlist.track_ids.length, "titre")}
-          href={resolve("/playlist/[id]", { id: String(playlist.id) })}
-          playLabel={`Lire ${playlist.name}`}
-          onplay={() => tracks.length > 0 && player.playFrom(tracks, 0, "playlist")}
-        >
-          {#snippet cover()}
-            <span class="mosaic" class:single={tracks.length < 4}>
-              {#each tracks.slice(0, tracks.length < 4 ? 1 : 4) as track (track.id)}
-                <img
-                  src={convertFileSrc(String(track.id), "cover")}
-                  alt=""
-                  loading="lazy"
-                  onerror={(e) => ((e.currentTarget as HTMLElement).style.visibility = "hidden")}
-                />
-              {/each}
-            </span>
-          {/snippet}
-        </MediaCard>
-      {/each}
-    </div>
+  {#if resume}
+    <Panel radius={20} pad={20} class="resume">
+      <div class="art" data-art><Cover src={resume.cover} /></div>
+      <div class="info">
+        <span class="kind">Reprendre</span>
+        <div class="name">{resume.title}</div>
+        <div class="by">{resume.artist ?? "Artiste inconnu"}</div>
+      </div>
+      <PlayButton
+        size={76}
+        playing={!!loaded && player.state.playing}
+        label={loaded && player.state.playing ? "Pause" : "Lire"}
+        onclick={toggleResume}
+      />
+    </Panel>
   {/if}
 
-  <h2>Tes mix</h2>
-  {#if home.loadingMixes && home.mixes.length === 0}
-    <p class="status">Préparation de tes mix…</p>
-  {:else if groups.length === 0}
-    <p class="status">Écoute quelques titres pour que je te propose des mix.</p>
-  {:else}
-    {#each groups as group (group.id)}
-      <h3>{group.label}</h3>
-      <div class="grid">
-        {#each group.mixes as mix (mix.id)}
-          <MediaCard
-            title={mix.title}
-            subtitle={`${plural(mix.tracks.length, "titre")} · ${group.label}`}
-            tracks={mix.tracks}
-            category={mix.category}
-            href={resolve("/mix/[id]", { id: mix.id })}
-            playLabel={`Lire ${mix.title}`}
-            onplay={() => home.playAll(mix.tracks)}
+  <Section title="Tes mix">
+    {#if home.loadingMixes && home.mixes.length === 0}
+      <p class="status">Préparation de tes mix…</p>
+    {:else if groups.length === 0}
+      <p class="status">Écoute quelques titres pour que je te propose des mix.</p>
+    {:else}
+      {#each groups as group (group.id)}
+        <Section label={group.label}>
+          <div class="grid">
+            {#each group.mixes as mix (mix.id)}
+              <MediaCard
+                title={mix.title}
+                subtitle={`${plural(mix.tracks.length, "titre")} · ${group.label}`}
+                covers={covers(mix.tracks)}
+                mosaic
+                href={resolve("/mix/[id]", { id: mix.id })}
+                playLabel={`Lire ${mix.title}`}
+                onplay={() => home.playAll(mix.tracks)}
+              />
+            {/each}
+          </div>
+        </Section>
+      {/each}
+    {/if}
+  </Section>
+
+  <Section title="Découvertes de la semaine">
+    {#if home.loadingDiscoveries && discoveries.length === 0}
+      <p class="status">Préparation de tes découvertes…</p>
+    {:else if discoveries.length === 0}
+      <p class="status">Écoute quelques titres pour que je te propose des découvertes.</p>
+    {:else}
+      <Card href={resolve("/discoveries")} radius={14} pad={14} class="wide">
+        <span class="wide-art"><Cover src={covers(discoveries)} mosaic /></span>
+        <span class="wide-info">
+          <span class="wide-title">Découvertes</span>
+          <span class="wide-meta">{plural(discoveries.length, "titre")} · De la semaine</span>
+        </span>
+        <PlayButton
+          size={56}
+          label="Lire les découvertes"
+          onclick={(e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            home.playAll(discoveries);
+          }}
+        />
+      </Card>
+    {/if}
+  </Section>
+
+  <Section title="Écoutés récemment">
+    {#if playable.length === 0}
+      <p class="status">Rien d'écouté pour l'instant.</p>
+    {:else}
+      <div class="recent">
+        {#each playable as track, i (track.youtube_id)}
+          <MiniCard
+            cover={youtubeCover(track.youtube_id)}
+            title={track.title}
+            subtitle={track.artist ?? "Artiste inconnu"}
+            onclick={() => home.play(playable, i)}
           />
         {/each}
       </div>
-    {/each}
-  {/if}
-
-  <h2>Découvertes de la semaine</h2>
-  {#if home.loadingDiscoveries && discoveries.length === 0}
-    <p class="status">Préparation de tes découvertes…</p>
-  {:else if discoveries.length === 0}
-    <p class="status">Écoute quelques titres pour que je te propose des découvertes.</p>
-  {:else}
-    <div class="grid">
-      <MediaCard
-        title="Découvertes"
-        subtitle={`${plural(discoveries.length, "titre")} · De la semaine`}
-        tracks={discoveries}
-        href={resolve("/discoveries")}
-        playLabel="Lire les découvertes"
-        onplay={() => home.playAll(discoveries)}
-      />
-    </div>
-  {/if}
-
-  <h2>Écoutés récemment</h2>
-  {#if playable.length === 0}
-    <p class="status">Rien d'écouté pour l'instant.</p>
-  {:else}
-    <div class="grid small">
-      {#each playable as track, i (track.youtube_id)}
-        <button class="recent" onclick={() => home.play(playable, i)} title="Lire">
-          <span class="img"><Thumb id={track.youtube_id} /></span>
-          <span class="meta">
-            <span class="name">{track.title}</span>
-            <span class="artist">{track.artist ?? "Artiste inconnu"}</span>
-          </span>
-        </button>
-      {/each}
-    </div>
-  {/if}
-</section>
+    {/if}
+  </Section>
+</div>
 
 <style>
-  header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 0.5rem;
-  }
-
-  header p {
-    margin: 0.4rem 0 0;
-  }
-
-  header :global(.pill) {
-    height: 40px;
-  }
-
-  .view h1.greeting {
-    font-size: 2.5rem;
-    letter-spacing: -0.02em;
-    line-height: 1.1;
-  }
-
-  h2 {
-    margin: 2.5rem 0 0.25rem;
-    font-size: 1.1rem;
-    font-weight: 700;
-  }
-
-  h3 {
-    margin: 1.25rem 0 0.75rem;
-    color: var(--muted);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .mosaic {
-    display: grid;
-    grid-template: 1fr 1fr / 1fr 1fr;
-    width: 100%;
-    height: 100%;
-  }
-
-  .mosaic.single {
-    grid-template: 1fr / 1fr;
-  }
-
-  .mosaic img {
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-    min-height: 0;
-    object-fit: cover;
-  }
-
-  .status {
-    margin: 0.75rem 0 0;
-    color: var(--muted);
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-    gap: 1rem;
-  }
-
-  h2 + .grid {
-    margin-top: 0.75rem;
-  }
-
-  .grid.small {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 0.5rem;
-  }
-
-  .recent {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-width: 0;
-    padding: 0.5rem;
-    border-radius: 12px;
-    background: var(--surface);
-    color: var(--text);
-    text-align: left;
-  }
-
-  .recent:hover,
-  .recent:focus-visible {
-    background: var(--surface-2);
-    outline: none;
-  }
-
-  .img {
-    flex: none;
-    width: 48px;
-    height: 48px;
-    overflow: hidden;
-    border-radius: 8px;
-  }
-
-  .img :global(.thumb) {
-    width: 100%;
-    height: 100%;
-  }
-
-  .meta {
+  .page {
     display: flex;
     flex-direction: column;
+    gap: 44px;
+  }
+  header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    padding-top: 20px;
+  }
+  .greeting {
+    font-size: clamp(38px, 6vw, 60px) !important;
+    letter-spacing: -0.045em !important;
+  }
+  .status {
+    margin: 0;
+    color: var(--mute);
+    font-size: 14px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 18px;
+  }
+  .recent {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+  }
+
+  /* Reprendre */
+  .page :global(.resume) {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr) auto;
+    gap: 32px;
+    align-items: center;
+  }
+  .art {
+    position: relative;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: var(--rs);
+    box-shadow: 0 24px 50px -16px var(--shadow);
+  }
+  .info {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     min-width: 0;
   }
-
-  .name,
-  .artist {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .name {
-    font-size: 0.9rem;
+  .kind {
+    color: var(--mute);
+    font-size: 13px;
     font-weight: 600;
   }
+  .name {
+    font-size: clamp(26px, 3.4vw, 40px);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.05;
+    text-wrap: pretty;
+  }
+  .by {
+    color: var(--mute);
+    font-size: 16px;
+  }
+  .page :global(.resume > .play-btn) {
+    margin-right: 16px;
+  }
 
-  .artist {
-    color: var(--muted);
-    font-size: 0.8rem;
+  /* Découvertes */
+  .page :global(.wide) {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr) auto;
+    gap: 24px;
+    align-items: center;
+    flex-direction: row;
+  }
+  .page :global(.wide > .play-btn) {
+    margin-right: 10px;
+  }
+  .wide-art {
+    position: relative;
+    display: block;
+    width: 120px;
+    height: 120px;
+    overflow: hidden;
+    border-radius: var(--rs);
+    box-shadow: 0 20px 40px -16px var(--shadow);
+  }
+  .wide-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .wide-title {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+  .wide-meta {
+    color: var(--mute);
+    font-size: 13px;
+  }
+
+  @container page (max-width: 640px) {
+    .page {
+      gap: 32px;
+    }
+    .page :global(.resume) {
+      grid-template-columns: 96px minmax(0, 1fr) auto;
+      gap: 16px;
+    }
+    .page :global(.resume > .play-btn) {
+      width: 56px !important;
+      height: 56px !important;
+      margin-right: 0;
+    }
+    .page :global(.wide) {
+      grid-template-columns: 80px minmax(0, 1fr) auto;
+      gap: 14px;
+    }
+    .wide-art {
+      width: 80px;
+      height: 80px;
+    }
+    .wide-title {
+      font-size: 20px;
+    }
+    .by {
+      font-size: 14px;
+    }
   }
 </style>

@@ -1,40 +1,54 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { account } from "#lib/stores/account.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
+  import { enterPage } from "#lib/motion.ts";
+  import Button from "#lib/components/ui/Button.svelte";
   import GroupLogin from "#lib/components/group/GroupLogin.svelte";
   import GroupLobby from "#lib/components/group/GroupLobby.svelte";
   import GroupSession from "#lib/components/group/GroupSession.svelte";
+
+  const step = $derived(
+    group.view
+      ? "session"
+      : account.account === null
+        ? "loading"
+        : account.loggedIn
+          ? "lobby"
+          : "login",
+  );
+
+  // Each step fades in like a page.
+  let body = $state<HTMLElement>();
+  let previous = "";
+  $effect(() => {
+    const current = step;
+    if (previous && previous !== current) tick().then(() => body && enterPage(body));
+    previous = current;
+  });
 </script>
 
-<section class="view">
-  <header>
-    <h1>Groupe d'écoute</h1>
-    <p class="subtitle">Écoute la même musique en même temps que tes amis.</p>
-  </header>
-
-  {#if group.view}
+<div class="page" bind:this={body}>
+  {#if step === "session" && group.view}
     <GroupSession view={group.view} />
-  {:else if account.account === null}
+  {:else if step === "loading"}
     {#if account.failed}
-      <button class="pill secondary" onclick={() => account.refresh()}>Réessayer</button>
+      <Button onclick={() => account.refresh()}>Réessayer</Button>
     {:else}
-      <p class="subtitle">Chargement…</p>
+      <p class="muted">Chargement…</p>
     {/if}
-  {:else if !account.loggedIn}
+  {:else if step === "login"}
     <GroupLogin />
   {:else}
     <GroupLobby />
   {/if}
-</section>
+</div>
 
 <style>
-  header {
-    margin-bottom: 1.5rem;
-  }
-
-  .subtitle {
-    margin: 0.25rem 0 0;
-    color: var(--muted);
-    font-size: 0.85rem;
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    padding-top: 20px;
   }
 </style>

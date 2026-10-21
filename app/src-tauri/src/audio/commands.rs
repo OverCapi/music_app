@@ -45,6 +45,12 @@ pub fn remove_from_queue(audio: State<'_, AudioHandle>, index: u32) -> AppResult
 
 #[tauri::command]
 #[specta::specta]
+pub fn move_in_queue(audio: State<'_, AudioHandle>, from: u32, to: u32) -> AppResult<()> {
+    audio.move_in_queue(from as usize, to as usize)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn clear_queue(audio: State<'_, AudioHandle>) -> AppResult<()> {
     audio.clear_queue()
 }

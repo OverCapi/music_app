@@ -1,5 +1,7 @@
 <script lang="ts">
   import { account } from "#lib/stores/account.svelte.ts";
+  import Button from "#lib/components/ui/Button.svelte";
+  import Panel from "#lib/components/ui/Panel.svelte";
 
   let serverUrl = $state(account.account?.server_url ?? "");
   let username = $state("");
@@ -31,80 +33,91 @@
   }
 </script>
 
-<form class="card" {onsubmit}>
-  <h2>Connexion</h2>
-  <p class="muted">Connecte-toi au serveur pour écouter de la musique avec tes amis.</p>
-
-  <label>
-    <span>Serveur</span>
-    <input
-      class="field"
-      bind:value={serverUrl}
-      oninput={() => (touchedUrl = true)}
-      placeholder="https://exemple.fr"
-      autocomplete="url"
-      spellcheck="false"
-    />
-  </label>
-  <label>
-    <span>Pseudo</span>
-    <input
-      class="field"
-      bind:value={username}
-      autocomplete="username"
-      spellcheck="false"
-      maxlength="32"
-    />
-  </label>
-  <label>
-    <span>Mot de passe</span>
-    <input class="field" type="password" bind:value={password} autocomplete="current-password" />
-  </label>
-
-  <div class="buttons">
-    <button class="pill primary" type="submit" disabled={!valid || account.busy}>
-      {account.busy ? "Connexion…" : "Se connecter"}
-    </button>
-    <button
-      class="pill secondary"
-      type="button"
-      onclick={() => submit("register")}
-      disabled={!valid || account.busy}
-    >
-      Créer un compte
-    </button>
-  </div>
+<form {onsubmit}>
+  <Panel radius={18} pad={32} class="login">
+    <div class="head">
+      <h1>Groupe d'écoute</h1>
+      <span class="muted">Écoutez ensemble, chacun depuis ses fichiers.</span>
+    </div>
+    <div class="fields">
+      <input
+        class="field mono"
+        bind:value={serverUrl}
+        oninput={() => (touchedUrl = true)}
+        placeholder="Serveur"
+        aria-label="Serveur"
+        autocomplete="url"
+        spellcheck="false"
+      />
+      <input
+        class="field"
+        bind:value={username}
+        placeholder="Nom d'utilisateur"
+        aria-label="Nom d'utilisateur"
+        autocomplete="username"
+        spellcheck="false"
+        maxlength="32"
+      />
+      <input
+        class="field"
+        type="password"
+        bind:value={password}
+        placeholder="Mot de passe"
+        aria-label="Mot de passe"
+        autocomplete="current-password"
+      />
+    </div>
+    <div class="buttons">
+      <Button variant="primary" size={44} type="submit" disabled={!valid || account.busy}>
+        {account.busy ? "Connexion…" : "Se connecter"}
+      </Button>
+      <Button size={44} onclick={() => submit("register")} disabled={!valid || account.busy}>
+        Créer un compte
+      </Button>
+    </div>
+  </Panel>
 </form>
 
 <style>
-  .card {
+  form {
+    width: 100%;
+    max-width: 440px;
+    margin: 40px auto 0;
+  }
+  form :global(.login) {
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
-    max-width: 380px;
+    gap: 22px;
+    box-sizing: border-box;
   }
-
-  h2 {
-    font-size: 1.2rem;
-  }
-
-  .muted {
-    margin: 0;
-    font-size: 0.85rem;
-  }
-
-  label {
+  .head {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    color: var(--muted);
-    font-size: 0.8rem;
-    font-weight: 600;
+    gap: 8px;
   }
-
+  .head :global(h1) {
+    font-size: 32px !important;
+    letter-spacing: -0.035em !important;
+  }
+  .head span {
+    font-size: 14px;
+  }
+  .fields {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .mono {
+    font-family: var(--mono);
+    font-size: 13px;
+  }
   .buttons {
     display: flex;
-    gap: 0.75rem;
-    margin-top: 0.25rem;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .buttons :global(.primary) {
+    flex: 1;
+    justify-content: center;
   }
 </style>

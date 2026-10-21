@@ -108,6 +108,22 @@ impl Queue {
         Ok(())
     }
 
+    /// Moves the item at `from` so it ends up at index `to`; `current` keeps pointing at
+    /// the same item.
+    pub fn move_item(&mut self, from: usize, to: usize) -> AppResult<()> {
+        self.check_index(from)?;
+        self.check_index(to)?;
+        let item = self.items.remove(from);
+        self.items.insert(to, item);
+        self.current = self.current.map(|c| match c {
+            c if c == from => to,
+            c if from < c && c <= to => c - 1,
+            c if to <= c && c < from => c + 1,
+            c => c,
+        });
+        Ok(())
+    }
+
     pub fn clear_except_current(&mut self) {
         match self.current {
             Some(c) => {
@@ -233,6 +249,32 @@ mod tests {
         assert_eq!(q.current(), Some(1));
         q.remove(0).unwrap();
         assert_eq!(q.current(), Some(0));
+    }
+
+    #[test]
+    fn move_item_keeps_current_on_the_same_item() {
+        // Before current -> after it.
+        let mut q = queue(&[1, 2, 3, 4], 2);
+        q.move_item(0, 3).unwrap();
+        assert_eq!(ids(&q), [2, 3, 4, 1]);
+        assert_eq!(q.current(), Some(1));
+        // After current -> before it.
+        let mut q = queue(&[1, 2, 3, 4], 1);
+        q.move_item(3, 0).unwrap();
+        assert_eq!(ids(&q), [4, 1, 2, 3]);
+        assert_eq!(q.current(), Some(2));
+        // The current item itself.
+        let mut q = queue(&[1, 2, 3], 1);
+        q.move_item(1, 2).unwrap();
+        assert_eq!(ids(&q), [1, 3, 2]);
+        assert_eq!(q.current(), Some(2));
+        // Not crossing current: unchanged.
+        let mut q = queue(&[1, 2, 3, 4], 0);
+        q.move_item(2, 3).unwrap();
+        assert_eq!(q.current(), Some(0));
+        // Out of range.
+        assert!(q.move_item(0, 4).is_err());
+        assert!(q.move_item(4, 0).is_err());
     }
 
     #[test]

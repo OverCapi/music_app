@@ -250,6 +250,11 @@ impl AudioHandle {
         self.edit_queue(|q| q.remove(index))
     }
 
+    /// Moves a queued track to another position; the current track keeps playing.
+    pub fn move_in_queue(&self, from: usize, to: usize) -> AppResult<()> {
+        self.edit_queue(|q| q.move_item(from, to))
+    }
+
     /// Removes every track except the current one.
     pub fn clear_queue(&self) -> AppResult<()> {
         self.edit_queue(|q| {

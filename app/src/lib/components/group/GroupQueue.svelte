@@ -2,11 +2,18 @@
   import { resolve } from "$app/paths";
   import type { GroupView } from "#lib/bindings.ts";
   import { group } from "#lib/stores/group.svelte.ts";
+  import { progressive } from "#lib/progressive.svelte.ts";
   import { formatTime } from "#lib/format.ts";
-  import Icon from "#lib/components/ui/Icon.svelte";
+  import { youtubeCover } from "#lib/covers.ts";
+  import Avatar from "#lib/components/ui/Avatar.svelte";
+  import IconButton from "#lib/components/ui/IconButton.svelte";
+  import TrackList from "#lib/components/ui/TrackList.svelte";
+  import TrackRow from "#lib/components/ui/TrackRow.svelte";
   import GroupTrackStatus from "#lib/components/group/GroupTrackStatus.svelte";
 
   let { view }: { view: GroupView } = $props();
+
+  const visible = progressive(() => view.state.queue.length);
 
   const queue = $derived(view.state.queue);
   const playing = $derived(view.state.playback.status === "playing");
@@ -24,172 +31,65 @@
     </p>
   </div>
 {:else}
-  <div class="table" role="table" aria-label="File du groupe">
-    <div class="row head" role="row">
-      <span role="columnheader">#</span>
-      <span role="columnheader">Titre</span>
-      <span role="columnheader">Ajouté par</span>
-      <span role="columnheader" class="right">Durée</span>
-      <span role="columnheader" class="center" title="Téléchargement local">État</span>
-      <span></span>
-    </div>
-    {#each queue as entry, i (entry.entry_id)}
+  <TrackList>
+    {#each queue.slice(0, visible.count) as entry, i (entry.entry_id)}
       {@const current = view.state.current === i}
-      <div
-        class="row entry"
-        class:current
-        class:past={view.state.current !== null && i < view.state.current}
-        role="row"
-        tabindex="0"
-        ondblclick={() => group.playEntry(entry.entry_id)}
-        onkeydown={(e) => e.key === "Enter" && group.playEntry(entry.entry_id)}
+      <TrackRow
+        index={i}
+        cover={youtubeCover(entry.youtube_id)}
+        {current}
+        playing={current && playing}
+        cols="minmax(0,2fr) minmax(0,1fr) 56px 28px 34px"
+        colsSmall="minmax(0,1fr) 28px 34px"
+        onplay={() => group.playEntry(entry.entry_id)}
       >
-        <span class="index">{current && playing ? "▶" : i + 1}</span>
-        <span class="title-cell">
-          <span class="title">{entry.title}</span>
-          <span class="artist">{entry.artist ?? "Artiste inconnu"}</span>
+        <span class="tr-main">
+          <span class="tr-title">{entry.title}</span>
+          <span class="tr-sub">{entry.artist ?? "Artiste inconnu"}</span>
         </span>
-        <span class="added-by">{entry.added_by === view.me ? "toi" : entry.added_by}</span>
-        <span class="duration right">
+        <span class="by hide-sm">
+          <Avatar name={entry.added_by} size={22} />
+          <span class="tr-sub">{entry.added_by === view.me ? "toi" : entry.added_by}</span>
+        </span>
+        <span class="tr-dur hide-sm">
           {entry.duration !== null ? formatTime(entry.duration) : ""}
         </span>
-        <span class="center">
-          <GroupTrackStatus download={view.downloads[entry.youtube_id]} />
-        </span>
-        <span class="row-actions">
-          <button
-            class="row-action"
-            onclick={() => group.playEntry(entry.entry_id)}
-            aria-label="Lire ce titre pour le groupe"
-            title="Lire ce titre pour le groupe"
-          >
-            <Icon name="play" size={16} />
-          </button>
-          <button
-            class="row-action"
+        <GroupTrackStatus download={view.downloads[entry.youtube_id]} />
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <span class="remove" onclick={(e) => e.stopPropagation()}>
+          <IconButton
+            icon="close"
+            label="Retirer de la file du groupe"
+            size={34}
+            iconSize={16}
             onclick={() => group.remove(entry.entry_id)}
-            aria-label="Retirer de la file du groupe"
-            title="Retirer de la file du groupe"
-          >
-            ✕
-          </button>
+          />
         </span>
-      </div>
+      </TrackRow>
     {/each}
-  </div>
+  </TrackList>
 {/if}
 
 <style>
-  .empty a {
-    color: var(--text);
-    text-decoration: underline;
-  }
-
-  .row {
-    display: grid;
-    grid-template-columns: 2.5rem minmax(0, 3fr) minmax(0, 1fr) 4rem 2.5rem 3.5rem;
+  .by {
+    display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.4rem 0.75rem;
-    border-radius: 4px;
-  }
-
-  .head {
-    margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--surface-2);
-    border-radius: 0;
-    color: var(--muted);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .entry {
-    color: var(--muted);
-    font-size: 0.9rem;
-    cursor: default;
-    outline: none;
-  }
-
-  .entry:hover,
-  .entry:focus-visible,
-  .entry:focus-within {
-    background: var(--surface-2);
-  }
-
-  .entry.past {
-    opacity: 0.6;
-  }
-
-  .right {
-    text-align: right;
-  }
-
-  .center {
-    display: flex;
-    justify-content: center;
-  }
-
-  .index {
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .title-cell {
-    display: flex;
-    flex-direction: column;
+    gap: 8px;
     min-width: 0;
   }
-
-  .title,
-  .artist,
-  .added-by {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .title {
-    color: var(--text);
-  }
-
-  .artist {
-    font-size: 0.8rem;
-  }
-
-  .current .title,
-  .current .index {
-    color: var(--accent);
-  }
-
-  .duration {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .row-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.6rem;
-  }
-
-  .row-action {
+  .remove {
     display: grid;
     place-items: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    background: transparent;
-    color: var(--muted);
-    font-size: 0.8rem;
-    visibility: hidden;
   }
-
-  .row-action:hover {
-    color: var(--text);
+  .empty {
+    padding: 2rem 0;
+    text-align: center;
   }
-
-  .entry:hover .row-action,
-  .entry:focus-within .row-action {
-    visibility: visible;
+  .empty p {
+    margin: 0.3rem 0;
+  }
+  .empty a {
+    color: var(--accent);
+    font-weight: 600;
   }
 </style>
