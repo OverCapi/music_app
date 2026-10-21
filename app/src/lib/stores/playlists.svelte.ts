@@ -30,6 +30,15 @@ class Playlists {
     return attempt(() => commands.removeFromPlaylist(id, trackId));
   }
 
+  /** `ids`: every playlist in its new display order. */
+  reorder(ids: number[]) {
+    return attempt(() => commands.reorderPlaylists(ids));
+  }
+
+  setPinned(id: number, pinned: boolean) {
+    return attempt(() => commands.setPlaylistPinned(id, pinned));
+  }
+
   async init(): Promise<UnlistenFn> {
     const unlisten = await events.playlistsChanged.listen(({ payload }) => {
       this.items = payload.playlists;

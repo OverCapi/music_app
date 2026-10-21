@@ -75,6 +75,10 @@ class Player {
     return attempt(() => commands.removeFromQueue(index));
   }
 
+  moveInQueue(from: number, to: number) {
+    return attempt(() => commands.moveInQueue(from, to));
+  }
+
   clearQueue() {
     return attempt(() => commands.clearQueue());
   }

@@ -1,10 +1,18 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
   import { storage } from "#lib/stores/storage.svelte.ts";
-  import { formatSize } from "#lib/format.ts";
   import { sync } from "#lib/stores/sync.svelte.ts";
-  import { THEMES, theme } from "#lib/stores/theme.svelte.ts";
-  import { plural } from "#lib/format.ts";
+  import { ACCENTS, theme, type Mode } from "#lib/stores/theme.svelte.ts";
+  import { progressive } from "#lib/progressive.svelte.ts";
+  import { formatSize, plural } from "#lib/format.ts";
+  import { liquid } from "#lib/motion.ts";
+  import Button from "#lib/components/ui/Button.svelte";
+  import Checkbox from "#lib/components/ui/Checkbox.svelte";
+  import Chip from "#lib/components/ui/Chip.svelte";
+  import Panel from "#lib/components/ui/Panel.svelte";
+  import ProgressBar from "#lib/components/ui/ProgressBar.svelte";
+  import Section from "#lib/components/ui/Section.svelte";
+  import Toggle from "#lib/components/ui/Toggle.svelte";
 
   const browserNames: Record<string, string> = {
     brave: "Brave",
@@ -18,6 +26,11 @@
     whale: "Whale",
   };
 
+  const modes: { id: Mode; label: string }[] = [
+    { id: "dark", label: "Sombre" },
+    { id: "light", label: "Clair" },
+  ];
+
   async function pickSpotify() {
     const path = await open({ filters: [{ name: "TSV", extensions: ["tsv"] }] });
     if (typeof path === "string") await sync.importSpotify(path);
@@ -26,6 +39,14 @@
   const freeable = $derived(
     storage.tracks.filter((t) => storage.selected.has(t.track_id)).reduce((n, t) => n + t.size, 0),
   );
+
+  let showFiles = $state(false);
+  const shownFiles = progressive(() => storage.tracks.length);
+
+  async function toggleFiles() {
+    showFiles = !showFiles;
+    if (showFiles) await storage.load();
+  }
 
   const settings = $derived(sync.settings);
   const lastSync = $derived(
@@ -36,86 +57,99 @@
         })
       : null,
   );
+  const syncProgress = $derived(
+    sync.running && sync.progress && sync.progress.total > 0
+      ? sync.progress.done / sync.progress.total
+      : null,
+  );
 </script>
 
-<section class="view">
-  <header>
-    <h1>Paramètres</h1>
-  </header>
+<div class="page">
+  <h1>Paramètres</h1>
 
-  <h2 class="section">Thème</h2>
-  <div class="themes" role="radiogroup" aria-label="Thème de couleur">
-    {#each THEMES as t (t.id)}
-      <button
-        class="theme"
-        class:selected={theme.current === t.id}
-        role="radio"
-        aria-checked={theme.current === t.id}
-        onclick={() => theme.set(t.id)}
-      >
-        <!-- The preview carries the theme's own variables. -->
-        <span class="preview" data-theme={t.id} aria-hidden="true">
-          <span class="surface"><span class="a"></span><span class="b"></span></span>
-          <span class="line"></span>
-          <span class="line short"></span>
-        </span>
-        {t.label}
-      </button>
-    {/each}
-  </div>
-
-  <h2 class="section">Synchronisation</h2>
-  <div class="sync-intro">
-    <p class="subtitle">
-      Importe tes titres likés et tes playlists. Les titres sont ajoutés sans être téléchargés : ils
-      le seront au moment de l'écoute. Un titre déjà présent n'est jamais ajouté deux fois.
-    </p>
-  </div>
-
-  <div class="card">
-    <h2>YouTube Music</h2>
-    <p class="muted">
-      L'app lit ta bibliothèque avec la connexion YouTube de ton navigateur : il suffit d'y être
-      connecté à YouTube Music. Les cookies ne sont jamais enregistrés par l'app.
-    </p>
-
-    {#if settings}
-      <label class="row">
-        <span>Navigateur</span>
-        <select
-          class="field"
-          value={settings.ytmusic_browser ?? ""}
-          disabled={sync.running}
-          onchange={(e) => sync.setBrowser(e.currentTarget.value)}
-        >
-          {#if !settings.ytmusic_browser}
-            <option value="" disabled>Choisir…</option>
-          {/if}
-          {#each settings.browsers as browser (browser)}
-            <option value={browser}>{browserNames[browser] ?? browser}</option>
-          {/each}
-        </select>
-      </label>
-
-      <div class="row">
+  <Section title="Apparence">
+    <div class="modes" role="radiogroup" aria-label="Mode">
+      {#each modes as m (m.id)}
         <button
-          class="pill primary"
-          disabled={!settings.ytmusic_browser || sync.running}
+          class="glass mode"
+          class:selected={theme.mode === m.id}
+          type="button"
+          role="radio"
+          aria-checked={theme.mode === m.id}
+          data-liquid
+          use:liquid
+          onclick={() => theme.setMode(m.id)}
+        >
+          <span class="preview" class:light={m.id === "light"}>
+            <span class="p-bar"></span>
+            <span class="p-row"><span class="p-dot"></span><span class="p-line"></span></span>
+            <span class="p-line short"></span>
+          </span>
+          <span class="mode-name">{m.label}</span>
+        </button>
+      {/each}
+    </div>
+    <Panel radius={10} class="accent-row">
+      <span class="lbl">Accent</span>
+      <div class="dots">
+        {#each ACCENTS as hue (hue)}
+          <button
+            class="dot"
+            class:selected={theme.accent === hue}
+            type="button"
+            aria-label={`Accent ${hue}`}
+            aria-pressed={theme.accent === hue}
+            style:--h={hue}
+            use:liquid
+            onclick={() => theme.setAccent(hue)}
+          ></button>
+        {/each}
+      </div>
+    </Panel>
+  </Section>
+
+  <Section title="Synchronisation">
+    <Panel radius={12} class="card-s">
+      <div class="top">
+        <div class="what">
+          <span class="name">YouTube Music</span>
+          <span class="muted">Titres likés et playlists, via ton navigateur</span>
+        </div>
+        <Button
+          variant="primary"
+          disabled={!settings?.ytmusic_browser || sync.running}
           onclick={() => sync.syncYoutubeMusic()}
         >
           {sync.running ? "Synchronisation…" : "Synchroniser"}
-        </button>
-        {#if sync.running && sync.progress}
-          <span class="muted">
+        </Button>
+      </div>
+      {#if settings}
+        <div class="chips">
+          {#each settings.browsers as browser (browser)}
+            <Chip
+              selected={settings.ytmusic_browser === browser}
+              disabled={sync.running}
+              onclick={() => sync.setBrowser(browser)}
+            >
+              {browserNames[browser] ?? browser}
+            </Chip>
+          {/each}
+        </div>
+      {/if}
+      <div class="status">
+        {#if sync.running}<ProgressBar value={syncProgress} />{/if}
+        <span class="muted small">
+          {#if sync.running && sync.progress}
             {sync.progress.step}{sync.progress.total > 0
               ? ` (${sync.progress.done + 1}/${sync.progress.total})`
               : ""}
-          </span>
-        {:else if lastSync}
-          <span class="muted">Dernière synchronisation : {lastSync}</span>
-        {/if}
+          {:else if lastSync}
+            Dernière synchronisation : {lastSync}
+          {:else if !settings?.ytmusic_browser}
+            Choisis le navigateur où tu es connecté à YouTube Music.
+          {/if}
+        </span>
       </div>
-
       {#if sync.report && !sync.running}
         {@const r = sync.report}
         <p class="report">
@@ -125,269 +159,364 @@
           )}
           dont {r.new_tracks} nouveau{r.new_tracks > 1 ? "x" : ""} dans la bibliothèque.
         </p>
-        {#if r.errors.length > 0}
-          <ul class="errors">
-            {#each r.errors as error (error)}
-              <li class="error">{error}</li>
-            {/each}
-          </ul>
-        {/if}
+        {#each r.errors as error (error)}
+          <p class="report error">{error}</p>
+        {/each}
       {/if}
-    {:else}
-      <p class="muted">Chargement…</p>
-    {/if}
-  </div>
+    </Panel>
 
-  <div class="card">
-    <h2>Spotify</h2>
-    <p class="muted">
-      Importe une liste de titres (fichier .tsv : n, titre, artiste, durée). Les titres déjà dans la
-      bibliothèque sont ignorés, les autres sont cherchés sur YouTube. Ceux qui ne sont pas trouvés
-      sont écrits dans un fichier « _non_trouves.tsv » à côté de la liste.
-    </p>
-    <div class="row">
-      <button class="pill primary" disabled={sync.running} onclick={pickSpotify}>
-        {sync.running ? "Import…" : "Choisir un fichier"}
-      </button>
-      {#if sync.running && sync.progress}
-        <span class="muted">{sync.progress.step} ({sync.progress.done}/{sync.progress.total})</span>
-      {/if}
-    </div>
-    {#if sync.spotifyReport && !sync.running}
-      {@const r = sync.spotifyReport}
-      <p class="report">
-        {plural(r.total, "titre")} : {r.already_owned} déjà présent{r.already_owned > 1 ? "s" : ""},
-        {r.added} ajouté{r.added > 1 ? "s" : ""}, {r.not_found} introuvable{r.not_found > 1
-          ? "s"
-          : ""}.
-        {#if r.not_found_path}Liste : {r.not_found_path}{/if}
-      </p>
-    {/if}
-  </div>
-
-  <h2 class="section">Stockage</h2>
-  <div class="card">
-    <h2>Optimiseur de stockage</h2>
-    <p class="muted">
-      Supprime le fichier audio des sons pas écoutés depuis longtemps. Les sons restent dans la
-      bibliothèque et sont retéléchargés quand tu les écoutes. Les favoris (★) sont conservés.
-    </p>
-    {#if storage.settings}
-      {@const s = storage.settings}
-      <label class="row">
-        <input
-          type="checkbox"
-          checked={s.auto}
-          onchange={(e) => storage.save({ ...s, auto: e.currentTarget.checked })}
-        />
-        <span>Optimiser automatiquement à chaque ouverture de l'app</span>
-      </label>
-      <label class="row">
-        <span>Supprimer après</span>
-        <input
-          class="field days"
-          type="number"
-          min="1"
-          value={s.days}
-          onchange={(e) =>
-            storage.save({
-              ...s,
-              days: Math.max(1, Math.floor(Number(e.currentTarget.value)) || 1),
-            })}
-        />
-        <span>jours sans écoute</span>
-      </label>
-      <div class="row">
-        <button class="pill primary" disabled={storage.busy} onclick={() => storage.optimize()}>
-          Optimiser maintenant
-        </button>
-        <button class="pill" disabled={storage.busy} onclick={() => storage.load()}>
-          Afficher les fichiers
-        </button>
+    <Panel radius={12} class="card-s">
+      <div class="top">
+        <div class="what">
+          <span class="name">Spotify</span>
+          <span class="muted">Importer une liste .tsv, cherchée sur YouTube</span>
+        </div>
+        <Button disabled={sync.running} onclick={pickSpotify}>Choisir un fichier</Button>
       </div>
-      {#if storage.tracks.length > 0}
-        <ul class="files">
-          {#each storage.tracks as t (t.track_id)}
-            <li>
-              <label>
-                <input
-                  type="checkbox"
+      {#if sync.spotifyReport && !sync.running}
+        {@const r = sync.spotifyReport}
+        <p class="report">
+          {plural(r.total, "titre")} : {r.already_owned} déjà présent{r.already_owned > 1
+            ? "s"
+            : ""}, {r.added} ajouté{r.added > 1 ? "s" : ""}, {r.not_found} introuvable{r.not_found >
+          1
+            ? "s"
+            : ""}.
+          {#if r.not_found_path}Liste : {r.not_found_path}{/if}
+        </p>
+      {/if}
+    </Panel>
+  </Section>
+
+  <Section title="Stockage">
+    <Panel radius={12} class="card-s">
+      {#if storage.settings}
+        {@const s = storage.settings}
+        <p class="muted small">
+          Supprime le fichier audio des sons pas écoutés depuis longtemps. Les sons restent dans la
+          bibliothèque et sont retéléchargés à l'écoute. Les favoris (★) sont conservés.
+        </p>
+        <div class="line">
+          <span class="name sm">Optimiser à chaque ouverture</span>
+          <Toggle
+            checked={s.auto}
+            label="Optimiser à chaque ouverture"
+            onchange={(auto) => storage.save({ ...s, auto })}
+          />
+        </div>
+        <div class="line days">
+          <span class="muted">Supprimer les fichiers après</span>
+          <input
+            class="field num"
+            type="number"
+            min="1"
+            value={s.days}
+            aria-label="Nombre de jours"
+            onchange={(e) =>
+              storage.save({
+                ...s,
+                days: Math.max(1, Math.floor(Number(e.currentTarget.value)) || 1),
+              })}
+          />
+          <span class="muted">jours sans écoute</span>
+        </div>
+        <div class="buttons">
+          <Button variant="primary" disabled={storage.busy} onclick={() => storage.optimize()}>
+            Optimiser maintenant
+          </Button>
+          <Button disabled={storage.busy} onclick={toggleFiles}>
+            {showFiles ? "Masquer les fichiers" : "Afficher les fichiers"}
+          </Button>
+        </div>
+        {#if showFiles}
+          <div class="files">
+            {#each storage.tracks.slice(0, shownFiles.count) as t (t.track_id)}
+              <div
+                class="file"
+                role="button"
+                tabindex="0"
+                onclick={() => storage.toggle(t.track_id)}
+                onkeydown={(e) => e.key === "Enter" && storage.toggle(t.track_id)}
+              >
+                <Checkbox
                   checked={storage.selected.has(t.track_id)}
+                  label={t.title}
                   onchange={() => storage.toggle(t.track_id)}
                 />
-                <span class="name">{t.title}{t.artist ? ` — ${t.artist}` : ""}</span>
-                <span class="muted">
+                <span class="fname">{t.title}{t.artist ? ` — ${t.artist}` : ""}</span>
+                <span class="fmeta">
                   {new Date(t.last_played * 1000).toLocaleDateString("fr-FR")} · {formatSize(
                     t.size,
                   )}
                 </span>
-              </label>
-            </li>
-          {/each}
-        </ul>
-        <div class="row">
-          <button
-            class="pill primary"
-            disabled={storage.busy || storage.selected.size === 0}
-            onclick={() => storage.deleteSelected()}
-          >
-            Supprimer la sélection ({formatSize(freeable)})
-          </button>
-        </div>
+              </div>
+            {:else}
+              <p class="muted small">Aucun fichier téléchargé.</p>
+            {/each}
+            {#if storage.tracks.length > 0}
+              <div class="del">
+                <Button
+                  disabled={storage.busy || storage.selected.size === 0}
+                  onclick={() => storage.deleteSelected()}
+                >
+                  Supprimer la sélection ({formatSize(freeable)})
+                </Button>
+              </div>
+            {/if}
+          </div>
+        {/if}
+      {:else}
+        <p class="muted">Chargement…</p>
       {/if}
-    {:else}
-      <p class="muted">Chargement…</p>
-    {/if}
-  </div>
-</section>
+    </Panel>
+  </Section>
+</div>
 
 <style>
-  header {
-    margin-bottom: 0.5rem;
-  }
-
-  .section {
-    margin: 2rem 0 1rem;
-    font-size: 1.1rem;
-    font-weight: 700;
-  }
-
-  .sync-intro {
-    margin-bottom: 1rem;
-  }
-
-  .themes {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 1rem;
-    max-width: 52rem;
-  }
-
-  .theme {
+  .page {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    padding: 0.6rem 0.6rem 0.8rem;
-    border: 2px solid transparent;
-    border-radius: 16px;
-    background: var(--surface);
-    color: var(--text);
-    font-weight: 700;
+    gap: 40px;
+    max-width: 780px;
+    padding-top: 20px;
+  }
+  .small {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  /* Appearance */
+  .modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .mode {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+    border-radius: calc(var(--rs) + 10px);
+    color: var(--fg);
     text-align: left;
+    cursor: pointer;
+    transition: box-shadow 0.3s;
   }
-
-  .theme:hover {
-    background: var(--surface-2);
+  .mode.selected {
+    box-shadow:
+      0 0 0 2px var(--accent),
+      0 20px 50px -18px var(--shadow);
   }
-
-  .theme.selected {
-    border-color: var(--accent);
+  .mode-name {
+    padding: 0 4px 2px;
+    font-size: 14px;
+    font-weight: 700;
   }
-
   .preview {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    height: 72px;
+    gap: 8px;
     box-sizing: border-box;
-    padding: 10px;
-    border-radius: 12px;
-    background: var(--bg);
+    height: 96px;
+    padding: 12px;
+    overflow: hidden;
+    border-radius: var(--rs);
+    background: oklch(0.13 0.008 250);
   }
-
-  .preview .surface {
+  .p-bar {
+    width: 70%;
+    height: 22px;
+    border: 1px solid oklch(1 0 0 / 0.1);
+    border-radius: 6px;
+    background: oklch(1 0 0 / 0.09);
+  }
+  .p-row {
     display: flex;
+    align-items: center;
     gap: 6px;
-    padding: 6px;
-    border-radius: 8px;
-    background: var(--surface);
   }
-
-  .preview .a,
-  .preview .b {
+  .p-dot {
     width: 14px;
     height: 14px;
     border-radius: 50%;
-  }
-
-  .preview .a {
     background: var(--accent);
   }
-
-  .preview .b {
-    background: var(--coral);
-  }
-
-  .preview .line {
+  .p-line {
+    width: 50%;
     height: 6px;
     border-radius: 3px;
-    background: var(--text);
-    opacity: 0.85;
+    background: oklch(0.96 0.004 250);
   }
-
-  .preview .line.short {
-    width: 60%;
-    background: var(--muted);
+  .p-line.short {
+    width: 35%;
+    background: oklch(0.72 0.01 250);
   }
-
-  .subtitle {
-    max-width: 40rem;
-    margin: 0.25rem 0 0;
-    color: var(--muted);
-    font-size: 0.85rem;
+  .preview.light {
+    background: oklch(0.955 0.004 250);
   }
-
-  .card {
-    max-width: 40rem;
-    margin-bottom: 1rem;
+  .light .p-bar {
+    border-color: #fff;
+    background: oklch(1 0 0 / 0.8);
   }
-
-  .row {
+  .light .p-line {
+    background: oklch(0.2 0.01 250);
+  }
+  .light .p-line.short {
+    background: oklch(0.47 0.01 250);
+  }
+  .page :global(.accent-row) {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-top: 1rem;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
   }
-
-  select {
-    width: auto;
-    min-width: 10rem;
+  .lbl {
+    font-size: 14px;
+    font-weight: 600;
   }
-
-  .days {
-    width: 5rem;
+  .dots {
+    display: flex;
+    gap: 12px;
   }
-
-  .files {
-    list-style: none;
-    margin: 1rem 0 0;
+  .dot {
+    position: relative;
+    overflow: hidden;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    max-height: 18rem;
-    overflow-y: auto;
+    border-radius: 50%;
+    background: oklch(0.8 0.13 var(--h));
+    transition:
+      transform 0.4s var(--ease-spring),
+      box-shadow 0.3s;
+  }
+  .dot:hover {
+    transform: scale(1.12);
+  }
+  .dot.selected {
+    box-shadow:
+      0 0 0 2px var(--bg),
+      0 0 0 4px oklch(0.8 0.13 var(--h));
   }
 
-  .files label {
+  /* Cards */
+  .page :global(.card-s) {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 22px 24px;
+  }
+  .top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .what {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+  }
+  .name {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .name.sm {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .status {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .report {
+    margin: 0;
+    color: var(--mute);
+    font-size: 13px;
+  }
+  .report.error {
+    color: var(--danger);
+  }
+
+  /* Storage */
+  .line {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.3rem 0;
+    justify-content: space-between;
+    gap: 16px;
   }
-
-  .files .name {
+  .line.days {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 14px;
+  }
+  .num {
+    width: 76px;
+    height: 38px;
+    text-align: center;
+    font-family: var(--mono);
+  }
+  .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .files {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .file {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 6px;
+    border-radius: var(--rs);
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .file:hover {
+    background: var(--glass2);
+  }
+  .fname {
     flex: 1;
     min-width: 0;
     overflow: hidden;
+    font-size: 14px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .report {
-    margin: 1rem 0 0;
+  .fmeta {
+    color: var(--mute);
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: nowrap;
   }
-
-  .errors {
-    margin: 0.5rem 0 0;
-    padding-left: 1.2rem;
-    font-size: 0.85rem;
+  .del {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 10px;
+  }
+  @container page (max-width: 520px) {
+    .fmeta {
+      display: none;
+    }
+    .modes {
+      gap: 10px;
+    }
   }
 </style>

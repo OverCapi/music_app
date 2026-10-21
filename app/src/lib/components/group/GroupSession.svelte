@@ -3,8 +3,10 @@
   import type { GroupView } from "#lib/bindings.ts";
   import { group } from "#lib/stores/group.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
-  import Icon from "#lib/components/ui/Icon.svelte";
+  import Button from "#lib/components/ui/Button.svelte";
+  import Panel from "#lib/components/ui/Panel.svelte";
   import GroupQueue from "#lib/components/group/GroupQueue.svelte";
+  import MemberChip from "#lib/components/group/MemberChip.svelte";
 
   let { view }: { view: GroupView } = $props();
 
@@ -46,227 +48,138 @@
   onDestroy(() => clearTimeout(copyTimer));
 </script>
 
-<div class="top">
-  <div>
-    <span class="label">Code du groupe</span>
+<Panel radius={14} pad={24} class="top">
+  <div class="code-block">
+    <span class="section-title">Code du groupe</span>
     <div class="code-line">
       <span class="code">{view.code}</span>
-      <button class="copy" class:copied onclick={copyLink} title={view.link}>
-        {#if copied}
-          Copié !
-        {:else}
-          <Icon name="copy" size={14} />
-          Copier le lien
-        {/if}
-      </button>
+      <Button size={36} onclick={copyLink} title={view.link} class="copy">
+        <span class="swap">
+          <span class:out={copied}>Copier le lien</span>
+          <span class:out={!copied}>Copié</span>
+        </span>
+      </Button>
     </div>
   </div>
   <div class="side">
-    {#if view.connected}
-      <span class="conn">Connecté</span>
-    {:else}
-      <span class="conn offline">Reconnexion…</span>
-    {/if}
-    <button class="leave" onclick={() => group.leave()} disabled={group.busy}>
-      Quitter le groupe
-    </button>
+    <span class="conn" class:offline={!view.connected}>
+      <span class="dot"></span>{view.connected ? "Connecté" : "Reconnexion…"}
+    </span>
+    <Button variant="outline" size={36} onclick={() => group.leave()} disabled={group.busy}>
+      Quitter
+    </Button>
   </div>
-</div>
+</Panel>
 
-<h3 class="section-title">Membres · {view.state.members.length}</h3>
-<ul class="members">
-  {#each view.state.members as member (member.username)}
-    {@const me = member.username === view.me}
-    <li class:me>
-      <span class="avatar" aria-hidden="true">{member.username.slice(0, 1).toUpperCase()}</span>
-      <span
-        >{member.username}{#if me}<span class="muted"> (toi)</span>{/if}</span
-      >
-      {#if hasCurrent}
-        <span
-          class="ready"
-          class:ok={member.ready}
-          title={member.ready ? "Titre en cours téléchargé" : "Téléchargement du titre en cours…"}
-        >
-          {member.ready ? "✓" : "…"}
-        </span>
-      {/if}
-    </li>
-  {/each}
-</ul>
+<section>
+  <span class="section-title">Membres · {view.state.members.length}</span>
+  <div class="members">
+    {#each view.state.members as member (member.username)}
+      <MemberChip
+        name={member.username}
+        me={member.username === view.me}
+        ready={hasCurrent ? member.ready : undefined}
+      />
+    {/each}
+  </div>
+</section>
 
-<div class="queue-header">
-  <h3 class="section-title">File du groupe</h3>
-  <span class="status" class:live={view.state.playback.status === "playing"}>{status}</span>
-</div>
-
-<GroupQueue {view} />
+<section>
+  <div class="queue-header">
+    <span class="section-title">File du groupe</span>
+    <span class="status">{status}</span>
+  </div>
+  <GroupQueue {view} />
+</section>
 
 <style>
-  .top {
+  :global(.top) {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 1.25rem;
+    gap: 20px;
   }
-
-  .label {
-    color: var(--muted);
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+  .code-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
-
   .code-line {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 1rem;
+    gap: 16px;
   }
-
   .code {
-    font-size: 2.5rem;
-    font-weight: 800;
-    letter-spacing: 0.15em;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--mono);
+    font-size: clamp(32px, 6vw, 48px);
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    line-height: 1;
     user-select: text;
   }
-
-  .copy {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.45rem 0.9rem;
-    border-radius: 999px;
-    background: var(--surface-2);
-    color: var(--text);
-    font-size: 0.8rem;
-    font-weight: 600;
+  .swap {
+    display: grid;
+    font-size: 13px;
   }
-
-  .copy:hover {
-    background: var(--surface-3);
+  .swap > span {
+    grid-area: 1 / 1;
+    text-align: center;
+    transition:
+      opacity 0.25s,
+      transform 0.35s var(--ease-spring);
   }
-
-  .copy.copied {
-    color: var(--accent);
+  .swap > .out {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.9);
   }
-
   .side {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 16px;
   }
-
   .conn {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    color: var(--muted);
-    font-size: 0.8rem;
+    gap: 8px;
+    color: var(--mute);
+    font-size: 13px;
   }
-
-  .conn::before {
-    content: "";
+  .dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
     background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
   }
-
-  .conn.offline {
-    color: var(--warning);
+  .offline .dot {
+    background: var(--danger);
   }
-
-  .conn.offline::before {
-    background: var(--warning);
-    animation: pulse 1.2s ease-in-out infinite;
+  @keyframes pulse {
+    50% {
+      opacity: 0.35;
+    }
   }
-
-  .leave {
-    padding: 0.5rem 1.1rem;
-    border: 1px solid var(--muted);
-    border-radius: 999px;
-    background: transparent;
-    color: var(--text);
-    font-size: 0.85rem;
-    font-weight: 700;
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
-
-  .leave:not(:disabled):hover {
-    border-color: var(--danger);
-    color: var(--danger);
-  }
-
   .members {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
+    gap: 8px;
   }
-
-  .members li {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.3rem 0.75rem 0.3rem 0.3rem;
-    border-radius: 999px;
-    background: var(--surface-2);
-    font-size: 0.85rem;
-  }
-
-  .members li.me {
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-
-  .avatar {
-    display: grid;
-    place-items: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--surface-3);
-    font-size: 0.75rem;
-    font-weight: 700;
-  }
-
-  .me .avatar {
-    background: var(--accent);
-    color: var(--on-accent);
-  }
-
-  .ready {
-    color: var(--muted);
-    font-size: 0.8rem;
-  }
-
-  .ready.ok {
-    color: var(--accent);
-  }
-
   .queue-header {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 12px;
   }
-
   .status {
-    color: var(--muted);
-    font-size: 0.85rem;
-  }
-
-  .status.live {
     color: var(--accent);
-  }
-
-  @keyframes pulse {
-    50% {
-      opacity: 0.4;
-    }
+    font-size: 13px;
+    font-weight: 600;
   }
 </style>

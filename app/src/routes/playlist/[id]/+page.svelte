@@ -8,10 +8,10 @@
   import { player } from "#lib/stores/player.svelte.ts";
   import { playlists } from "#lib/stores/playlists.svelte.ts";
   import { formatTotal, plural } from "#lib/format.ts";
-  import TrackCollection from "#lib/components/ui/TrackCollection.svelte";
-  import TrackTable from "#lib/components/ui/TrackTable.svelte";
-  import EnqueueButton from "#lib/components/library/EnqueueButton.svelte";
-  import AddToPlaylist from "#lib/components/playlists/AddToPlaylist.svelte";
+  import { trackCover } from "#lib/covers.ts";
+  import Button from "#lib/components/ui/Button.svelte";
+  import PageHeader from "#lib/components/ui/PageHeader.svelte";
+  import LibraryTracks from "#lib/components/tracks/LibraryTracks.svelte";
 
   const id = $derived(Number(page.params.id));
   const playlist = $derived(playlists.find(id));
@@ -70,24 +70,25 @@
   }
 </script>
 
-<section class="view">
+<div class="page">
   {#if !playlist}
     <p class="muted">Cette playlist n'existe plus.</p>
   {:else}
-    <TrackCollection
+    <PageHeader
       kind="Playlist"
-      name={playlist.name}
+      title={playlist.name}
       meta={plural(tracks.length, "titre") +
         (tracks.length > 0 ? ` · ${formatTotal(totalDuration)}` : "")}
-      icon="note"
+      covers={tracks.slice(0, 4).map((t) => trackCover(t.id))}
       playLabel="Lire la playlist"
       playDisabled={tracks.length === 0}
       onplay={playAll}
     >
-      {#snippet title()}
+      {#snippet titleSlot()}
         {#if renaming}
           <form onsubmit={saveRename}>
             <input
+              class="rename"
               bind:this={nameInput}
               bind:value={nameDraft}
               maxlength="100"
@@ -102,90 +103,51 @@
           </h1>
         {/if}
       {/snippet}
-      {#snippet toolbar()}
-        <button class="secondary" onclick={startRename}>Renommer</button>
-        <button
-          class="secondary"
-          class:danger={confirmDelete}
-          onclick={deletePlaylist}
-          onblur={() => (confirmDelete = false)}
-        >
+      {#snippet extra()}
+        <Button onclick={startRename}>Renommer</Button>
+        <Button variant="outline" onclick={deletePlaylist} onblur={() => (confirmDelete = false)}>
           {confirmDelete ? "Confirmer la suppression" : "Supprimer"}
-        </button>
+        </Button>
       {/snippet}
+    </PageHeader>
 
-      {#if tracks.length === 0}
-        <div class="empty">
-          <p>Cette playlist est vide.</p>
-          <p class="muted">
-            Ajoute des titres depuis la bibliothèque avec le bouton « + » de chaque ligne.
-          </p>
-        </div>
-      {:else}
-        <TrackTable {tracks} onplay={playFrom}>
-          {#snippet actions(track)}
-            <EnqueueButton trackId={track.id} source="playlist" />
-            <AddToPlaylist trackId={track.id} exclude={id} />
-            <button
-              class="row-action"
-              onclick={() => playlists.removeTrack(id, track.id)}
-              aria-label="Retirer de la playlist"
-              title="Retirer de la playlist"
-            >
-              ✕
-            </button>
-          {/snippet}
-        </TrackTable>
-      {/if}
-    </TrackCollection>
+    <LibraryTracks
+      {tracks}
+      source="playlist"
+      playlistId={id}
+      onplay={playFrom}
+      empty={tracks.length === 0 ? "Ajoute des titres depuis la bibliothèque." : undefined}
+    />
   {/if}
-</section>
+</div>
 
 <style>
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
   .name {
-    max-width: 100%;
     padding: 0;
-    overflow: hidden;
     background: transparent;
-    color: var(--text);
-    font-size: inherit;
-    font-weight: inherit;
-    text-align: left;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  input {
-    width: min(100%, 480px);
-    margin: 0.3rem 0;
-    padding: 0.2rem 0.5rem;
-    border: 1px solid var(--muted);
-    border-radius: 4px;
-    background: var(--surface-2);
-    color: var(--text);
+    color: inherit;
     font: inherit;
-    font-size: 2rem;
-    font-weight: 700;
-    outline: none;
+    letter-spacing: inherit;
+    text-align: left;
+    cursor: text;
   }
-
-  .secondary {
-    padding: 0.45rem 1rem;
-    border: 1px solid var(--track);
-    border-radius: 999px;
+  .rename {
+    width: 100%;
+    box-sizing: border-box;
+    border: 0;
+    border-bottom: 2px solid var(--accent);
     background: transparent;
-    color: var(--muted);
-    font-size: 0.8rem;
-    font-weight: 600;
-  }
-
-  .secondary:hover {
-    border-color: var(--text);
-    color: var(--text);
-  }
-
-  .secondary.danger {
-    border-color: var(--danger);
-    color: var(--danger);
+    color: var(--fg);
+    font: inherit;
+    font-size: clamp(30px, 5vw, 52px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    outline: none;
+    user-select: text;
   }
 </style>

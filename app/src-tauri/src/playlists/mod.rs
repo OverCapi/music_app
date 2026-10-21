@@ -28,6 +28,10 @@ pub struct Playlist {
     pub track_ids: Vec<TrackId>,
     /// Unix timestamp (seconds).
     pub created_at: i64,
+    /// Display order within the pinned / unpinned groups.
+    pub position: u32,
+    /// Pinned playlists are listed first.
+    pub pinned: bool,
 }
 
 #[derive(Clone, Debug, Serialize, specta::Type, tauri_specta::Event)]
@@ -48,7 +52,7 @@ impl Playlists {
         Self { db, app }
     }
 
-    /// All playlists, in creation order.
+    /// All playlists: pinned first, then by position.
     pub fn all(&self) -> AppResult<Vec<Playlist>> {
         let conn = self.db.conn();
         let mut tracks: HashMap<PlaylistId, Vec<TrackId>> = HashMap::new();
@@ -59,8 +63,10 @@ impl Playlists {
         while let Some(row) = rows.next()? {
             tracks.entry(row.get(0)?).or_default().push(row.get(1)?);
         }
-        let mut stmt =
-            conn.prepare("SELECT id, name, created_at FROM playlists ORDER BY created_at, id")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, created_at, position, pinned FROM playlists
+             ORDER BY pinned DESC, position, id",
+        )?;
         let playlists = stmt
             .query_map([], |row| {
                 let id = row.get(0)?;
@@ -69,6 +75,8 @@ impl Playlists {
                     name: row.get(1)?,
                     track_ids: tracks.remove(&id).unwrap_or_default(),
                     created_at: row.get(2)?,
+                    position: row.get(3)?,
+                    pinned: row.get(4)?,
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -82,17 +90,25 @@ impl Playlists {
         let id = {
             let conn = self.db.conn();
             conn.execute(
-                "INSERT INTO playlists (name, created_at) VALUES (?1, ?2)",
+                "INSERT INTO playlists (name, created_at, position)
+                 VALUES (?1, ?2, (SELECT COALESCE(MAX(position) + 1, 0) FROM playlists))",
                 params![name, created_at],
             )?;
             conn.last_insert_rowid()
         };
         self.changed()?;
+        let position = self.db.conn().query_row(
+            "SELECT position FROM playlists WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
         Ok(Playlist {
             id,
             name,
             track_ids: Vec::new(),
             created_at,
+            position,
+            pinned: false,
         })
     }
 
@@ -101,6 +117,34 @@ impl Playlists {
         let updated = self.db.conn().execute(
             "UPDATE playlists SET name = ?1 WHERE id = ?2",
             params![name, id],
+        )?;
+        if updated == 0 {
+            return Err(gone());
+        }
+        self.changed()
+    }
+
+    /// Rewrites the display order: `ids` lists playlists in their new order.
+    /// Unknown ids are ignored; playlists not listed keep their position.
+    pub fn reorder(&self, ids: &[PlaylistId]) -> AppResult<()> {
+        {
+            let mut conn = self.db.conn();
+            let tx = conn.transaction()?;
+            {
+                let mut update = tx.prepare("UPDATE playlists SET position = ?1 WHERE id = ?2")?;
+                for (position, id) in ids.iter().enumerate() {
+                    update.execute(params![position as i64, id])?;
+                }
+            }
+            tx.commit()?;
+        }
+        self.changed()
+    }
+
+    pub fn set_pinned(&self, id: PlaylistId, pinned: bool) -> AppResult<()> {
+        let updated = self.db.conn().execute(
+            "UPDATE playlists SET pinned = ?1 WHERE id = ?2",
+            params![pinned, id],
         )?;
         if updated == 0 {
             return Err(gone());
@@ -270,6 +314,25 @@ mod tests {
         assert!(pl.rename(p2.id, "x").is_err());
         assert!(pl.add_tracks(p2.id, &[a]).is_err());
         assert_eq!(pl.all().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn reorder_and_pin() {
+        let (_, pl) = setup();
+        let [a, b, c] = ["A", "B", "C"].map(|n| pl.create(n).unwrap().id);
+        let names = |pl: &Playlists| -> Vec<String> {
+            pl.all().unwrap().into_iter().map(|p| p.name).collect()
+        };
+        assert_eq!(names(&pl), ["A", "B", "C"]);
+        pl.reorder(&[c, a, b]).unwrap();
+        assert_eq!(names(&pl), ["C", "A", "B"]);
+        pl.set_pinned(b, true).unwrap();
+        assert_eq!(names(&pl), ["B", "C", "A"]);
+        assert!(pl.all().unwrap()[0].pinned);
+        // New playlists go last.
+        pl.create("D").unwrap();
+        assert_eq!(names(&pl), ["B", "C", "A", "D"]);
+        assert!(pl.set_pinned(999, true).is_err());
     }
 
     #[test]

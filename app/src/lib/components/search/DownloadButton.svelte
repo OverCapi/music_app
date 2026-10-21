@@ -1,6 +1,8 @@
 <script lang="ts">
+  /** Download state of a YouTube video: arrow → progress ring (click cancels) → check. */
   import { downloads } from "#lib/stores/downloads.svelte.ts";
   import { library } from "#lib/stores/library.svelte.ts";
+  import { liquid } from "#lib/motion.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
   import ProgressRing from "#lib/components/ui/ProgressRing.svelte";
 
@@ -9,13 +11,19 @@
   const download = $derived(downloads.get(id));
   const inLibrary = $derived(library.hasYoutubeId(id));
   const progress = $derived(download?.progress ?? 0);
+  const busy = $derived(
+    download?.status === "queued" ||
+      download?.status === "downloading" ||
+      download?.status === "converting",
+  );
 </script>
 
 {#if inLibrary}
-  <span class="state done" title="Dans la bibliothèque"><Icon name="checkCircle" size={22} /></span>
-{:else if download?.status === "queued" || download?.status === "downloading" || download?.status === "converting"}
+  <span class="state done" title="Dans la bibliothèque"><Icon name="check" size={18} /></span>
+{:else if busy && download}
   <button
-    class="state"
+    class="halo-btn"
+    use:liquid
     onclick={() => downloads.cancel(id)}
     title={download.status === "queued"
       ? "En attente — cliquer pour annuler"
@@ -28,46 +36,46 @@
   </button>
 {:else if download?.status === "error"}
   <button
-    class="state error"
+    class="halo-btn error"
+    use:liquid
     onclick={() => downloads.start(id)}
     title={`${download.error ?? "Erreur"} — cliquer pour réessayer`}
     aria-label="Réessayer le téléchargement"
   >
-    <Icon name="errorCircle" size={22} />
+    <Icon name="errorCircle" size={20} />
   </button>
 {:else}
   <button
-    class="state idle"
+    class="halo-btn"
+    use:liquid
     onclick={() => downloads.start(id)}
     title="Télécharger dans la bibliothèque"
     aria-label="Télécharger"
   >
-    <Icon name="download" size={22} />
+    <Icon name="download" size={18} />
   </button>
 {/if}
 
 <style>
+  .halo-btn {
+    width: 34px;
+    height: 34px;
+  }
   .state {
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--muted);
-  }
-
-  .idle:hover {
-    color: var(--text);
-    transform: scale(1.08);
-  }
-
-  .done {
+    width: 34px;
+    height: 34px;
     color: var(--accent);
+    animation: pop 0.45s var(--ease-spring);
   }
-
   .error {
     color: var(--danger);
+  }
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: scale(0.5) rotate(-30deg);
+    }
   }
 </style>

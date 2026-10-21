@@ -19,6 +19,7 @@ export const commands = {
 	playSuggestions: (tracks: SuggestedTrack[], start: number) => __TAURI_INVOKE<null>("play_suggestions", { tracks, start }),
 	playIndex: (index: number) => __TAURI_INVOKE<null>("play_index", { index }),
 	removeFromQueue: (index: number) => __TAURI_INVOKE<null>("remove_from_queue", { index }),
+	moveInQueue: (from: number, to: number) => __TAURI_INVOKE<null>("move_in_queue", { from, to }),
 	clearQueue: () => __TAURI_INVOKE<null>("clear_queue"),
 	getQueue: () => __TAURI_INVOKE<QueueState>("get_queue"),
 	getPlayerState: () => __TAURI_INVOKE<PlayerState>("get_player_state"),
@@ -48,6 +49,8 @@ export const commands = {
 	deletePlaylist: (id: number) => __TAURI_INVOKE<null>("delete_playlist", { id }),
 	addToPlaylist: (id: number, trackIds: number[]) => __TAURI_INVOKE<null>("add_to_playlist", { id, trackIds }),
 	removeFromPlaylist: (id: number, trackId: number) => __TAURI_INVOKE<null>("remove_from_playlist", { id, trackId }),
+	reorderPlaylists: (ids: number[]) => __TAURI_INVOKE<null>("reorder_playlists", { ids }),
+	setPlaylistPinned: (id: number, pinned: boolean) => __TAURI_INVOKE<null>("set_playlist_pinned", { id, pinned }),
 	searchYoutube: (query: string, offset: number, searchId: number | null) => __TAURI_INVOKE<SearchResponse>("search_youtube", { query, offset, searchId }),
 	downloadTrack: (youtubeId: string) => __TAURI_INVOKE<null>("download_track", { youtubeId }),
 	cancelDownload: (youtubeId: string) => __TAURI_INVOKE<void>("cancel_download", { youtubeId }),
@@ -350,6 +353,10 @@ export type Playlist = {
 	track_ids: number[],
 	/**  Unix timestamp (seconds). */
 	created_at: number,
+	/**  Display order within the pinned / unpinned groups. */
+	position: number,
+	/**  Pinned playlists are listed first. */
+	pinned: boolean,
 };
 
 export type PlaylistsChanged = {

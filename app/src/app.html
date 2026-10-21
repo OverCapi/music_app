@@ -8,13 +8,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     />
     <script>
-      // Apply the saved theme before first paint (see src/lib/stores/theme.svelte.ts).
+      // Apply the saved mode and accent before first paint (see src/lib/stores/theme.svelte.ts).
       try {
-        const theme = localStorage.getItem("theme");
-        if (theme) document.documentElement.dataset.theme = theme;
+        const m = localStorage.getItem("theme-mode");
+        if (m) document.documentElement.dataset.mode = m;
+        const a = localStorage.getItem("theme-accent");
+        if (a) document.documentElement.style.setProperty("--accent-h", a);
       } catch {}
     </script>
     %sveltekit.head%

@@ -1,10 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { LiveChannel, LiveStream } from "#lib/bindings.ts";
-  import Icon from "#lib/components/ui/Icon.svelte";
+  import { progressive } from "#lib/progressive.svelte.ts";
   import { lives } from "#lib/stores/lives.svelte.ts";
   import { player } from "#lib/stores/player.svelte.ts";
+  import Button from "#lib/components/ui/Button.svelte";
+  import Icon from "#lib/components/ui/Icon.svelte";
+  import IconButton from "#lib/components/ui/IconButton.svelte";
+  import Section from "#lib/components/ui/Section.svelte";
+  import ChannelCircle from "#lib/components/live/ChannelCircle.svelte";
+  import LiveCard from "#lib/components/live/LiveCard.svelte";
+  import LivePanel from "#lib/components/live/LivePanel.svelte";
 
+  const shownLives = progressive(() => Math.max(lives.results.length, lives.channelLives.length));
   const playingId = $derived(player.state.live?.id);
 
   onMount(() => lives.loadFavorites());
@@ -14,42 +22,28 @@
       ? ""
       : `${new Intl.NumberFormat("fr-FR", { notation: "compact" }).format(n)} abonnés`;
   }
-</script>
 
-{#snippet channelCard(c: LiveChannel)}
-  <button class="channel-card" onclick={() => lives.openChannel(c)}>
-    <img src={c.thumbnail} alt="" loading="lazy" />
-    <span class="name">{c.name}</span>
-    <span class="sub">{c.handle ?? ""} {followers(c.followers)}</span>
-  </button>
-{/snippet}
+  const sub = (c: LiveChannel) => [c.handle, followers(c.followers)].filter(Boolean).join(" ");
+</script>
 
 {#snippet liveGrid(items: LiveStream[])}
   <div class="grid" class:stale={lives.loading}>
-    {#each items as stream (stream.id)}
-      <button
-        class="live card"
-        class:playing={stream.id === playingId}
-        onclick={() => lives.play(stream)}
-      >
-        <span class="thumb">
-          <img src={stream.thumbnail} alt="" loading="lazy" />
-          <span class="badge">En direct</span>
-        </span>
-        <span class="title">{stream.title}</span>
-        <span class="channel">
-          {stream.channel ?? ""}{#if stream.viewers !== null}
-            · {stream.viewers.toLocaleString("fr-FR")} spectateurs{/if}
-        </span>
-      </button>
+    {#each items.slice(0, shownLives.count) as stream (stream.id)}
+      <LiveCard {stream} playing={stream.id === playingId} onplay={() => lives.play(stream)} />
     {/each}
   </div>
 {/snippet}
 
-<section class="view">
-  <header>
-    <h1>Lives</h1>
-  </header>
+{#snippet channelGrid(items: LiveChannel[])}
+  <div class="channels">
+    {#each items as c (c.id)}
+      <ChannelCircle channel={c} sub={sub(c)} onclick={() => lives.openChannel(c)} />
+    {/each}
+  </div>
+{/snippet}
+
+<div class="page">
+  <h1>Lives</h1>
 
   <form
     onsubmit={(e) => {
@@ -61,37 +55,34 @@
       class="field"
       type="search"
       bind:value={lives.query}
-      placeholder="Un artiste, une chaîne, ou le lien d'un live YouTube"
+      placeholder="Artiste, chaîne ou lien d'un live"
       aria-label="Rechercher un live"
     />
-    <button class="pill primary" disabled={lives.loading || !lives.query.trim()}>Rechercher</button>
+    <Button
+      variant="primary"
+      size={44}
+      type="submit"
+      disabled={lives.loading || !lives.query.trim()}
+    >
+      Rechercher
+    </Button>
   </form>
+
+  <LivePanel />
 
   {#if lives.channel}
     {@const c = lives.channel}
     <div class="channel-head">
-      <button
-        class="icon"
-        onclick={() => (lives.channel = null)}
-        aria-label="Retour"
-        title="Retour"
-      >
-        <Icon name="chevronLeft" />
-      </button>
+      <IconButton icon="chevronLeft" label="Retour" onclick={() => (lives.channel = null)} />
       <img src={c.thumbnail} alt="" />
       <div class="who">
         <h2>{c.name}</h2>
-        <span class="sub">{c.handle ?? ""} {followers(c.followers)}</span>
+        <span class="muted">{sub(c)}</span>
       </div>
-      <button
-        class="pill secondary"
-        class:fav={lives.isFavorite(c.id)}
-        onclick={() => lives.toggleFavorite(c)}
-        aria-pressed={lives.isFavorite(c.id)}
-      >
-        <Icon name={lives.isFavorite(c.id) ? "heartFilled" : "heart"} size={18} />
+      <Button onclick={() => lives.toggleFavorite(c)} aria-pressed={lives.isFavorite(c.id)}>
+        <Icon name={lives.isFavorite(c.id) ? "heartFilled" : "heart"} size={16} />
         {lives.isFavorite(c.id) ? "Favori" : "Ajouter aux favoris"}
-      </button>
+      </Button>
     </div>
     {#if lives.channelLoading}
       <p class="status">Recherche des lives…</p>
@@ -108,216 +99,85 @@
     {/if}
 
     {#if lives.channels.length > 0 && !lives.loading}
-      <h3 class="section-title">Chaînes</h3>
-      <div class="channels">
-        {#each lives.channels as c (c.id)}
-          {@render channelCard(c)}
-        {/each}
-      </div>
+      <Section label="Chaînes">{@render channelGrid(lives.channels)}</Section>
     {/if}
 
     {#if lives.searched !== null && !lives.loading}
-      {#if lives.results.length === 0}
-        <p class="status">Aucun live en cours pour « {lives.searched} ».</p>
-      {:else}
-        <h3 class="section-title">Lives</h3>
-        {@render liveGrid(lives.results)}
-      {/if}
+      <Section label="En direct">
+        {#if lives.results.length === 0}
+          <p class="status">Aucun live pour « {lives.searched} »</p>
+        {:else}
+          {@render liveGrid(lives.results)}
+        {/if}
+      </Section>
     {/if}
 
     {#if lives.favorites.length > 0}
-      <h3 class="section-title">Chaînes favorites</h3>
-      <div class="channels">
-        {#each lives.favorites as c (c.id)}
-          {@render channelCard(c)}
-        {/each}
-      </div>
+      <Section label="Chaînes favorites">{@render channelGrid(lives.favorites)}</Section>
     {/if}
   {/if}
-</section>
+</div>
 
 <style>
-  header {
-    margin-bottom: 1.25rem;
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    padding-top: 20px;
   }
-
   form {
     display: flex;
-    gap: 0.75rem;
-    margin-bottom: 1.25rem;
+    max-width: 720px;
+    gap: 10px;
   }
-
-  input {
+  form .field {
     flex: 1;
     min-width: 0;
   }
-
-  .section-title {
-    margin-top: 0;
+  .status {
+    margin: 0;
+    color: var(--mute);
+    font-size: 14px;
   }
-
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 18px;
+    transition: opacity 0.3s;
+  }
+  .grid.stale {
+    opacity: 0.5;
+  }
   .channels {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 16px;
-    margin-bottom: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 22px;
   }
-
-  .channel-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.2rem;
-    padding: 0.8rem;
-    border-radius: 16px;
-    background: var(--surface);
-    color: var(--text);
-    text-align: center;
-    transition:
-      background 0.15s,
-      transform 0.15s;
-  }
-
-  .channel-card:hover,
-  .channel-card:focus-visible {
-    background: var(--surface-2);
-    transform: translateY(-2px);
-  }
-
-  .channel-card img {
-    width: 88px;
-    height: 88px;
-    margin-bottom: 0.5rem;
-    border-radius: 50%;
-    object-fit: cover;
-    background: var(--surface-3);
-  }
-
-  .channel-card .name {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 700;
-  }
-
-  .sub {
-    color: var(--muted);
-    font-size: 0.8rem;
-  }
-
   .channel-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 14px;
-    margin-bottom: 1.25rem;
   }
-
   .channel-head img {
-    width: 64px;
-    height: 64px;
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
     object-fit: cover;
-    background: var(--surface-3);
   }
-
   .who {
     display: flex;
     flex: 1;
     flex-direction: column;
+    gap: 2px;
     min-width: 0;
   }
-
-  .who h2 {
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 1.3rem;
-  }
-
-  .pill.fav {
-    color: var(--accent);
-  }
-
-  .status {
-    margin: 0 0 1rem;
-    color: var(--muted);
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 16px;
-  }
-
-  .grid.stale {
-    opacity: 0.5;
-  }
-
-  .live {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    padding: 0.8rem;
-    text-align: left;
-    color: var(--text);
-    transition:
-      background 0.15s,
-      transform 0.15s;
-  }
-
-  .live:hover,
-  .live:focus-visible,
-  .live.playing {
-    background: var(--surface-2);
-  }
-
-  .live:hover {
-    transform: translateY(-2px);
-  }
-
-  .thumb {
-    position: relative;
-    display: block;
-    aspect-ratio: 16 / 9;
-    overflow: hidden;
-    border-radius: 6px;
-    background: var(--surface-3);
-    box-shadow: var(--shadow-float);
-  }
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .badge {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    padding: 0.15rem 0.5rem;
-    border-radius: 999px;
-    background: #e5252a;
-    color: #fff;
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-
-  .title {
-    display: -webkit-box;
-    overflow: hidden;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    font-weight: 600;
-  }
-
-  .channel {
-    color: var(--muted);
-    font-size: 0.8rem;
+  @container page (max-width: 520px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+    .channels {
+      grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    }
   }
 </style>

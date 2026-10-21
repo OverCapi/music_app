@@ -1,29 +1,79 @@
 <script lang="ts">
+  import { tick } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { commands, type Track } from "#lib/bindings.ts";
+  import type { Track } from "#lib/bindings.ts";
   import { library } from "#lib/stores/library.svelte.ts";
   import { player } from "#lib/stores/player.svelte.ts";
-  import { group } from "#lib/stores/group.svelte.ts";
   import { attempt } from "#lib/stores/toasts.svelte.ts";
   import { formatTotal, plural } from "#lib/format.ts";
-  import TrackCollection from "#lib/components/ui/TrackCollection.svelte";
-  import TrackTable from "#lib/components/ui/TrackTable.svelte";
-  import EnqueueButton from "#lib/components/library/EnqueueButton.svelte";
-  import AddToPlaylist from "#lib/components/playlists/AddToPlaylist.svelte";
-  import AddToGroup from "#lib/components/group/AddToGroup.svelte";
+  import { trackCover } from "#lib/covers.ts";
+  import { enterPage, liquid } from "#lib/motion.ts";
+  import { progressive } from "#lib/progressive.svelte.ts";
+  import Button from "#lib/components/ui/Button.svelte";
+  import Cover from "#lib/components/ui/Cover.svelte";
+  import Icon from "#lib/components/ui/Icon.svelte";
+  import MediaCard from "#lib/components/ui/MediaCard.svelte";
+  import SegmentedPills from "#lib/components/ui/SegmentedPills.svelte";
+  import LibraryTracks from "#lib/components/tracks/LibraryTracks.svelte";
 
-  let query = $state("");
+  type Tab = "albums" | "artists" | "tracks";
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "tracks", label: "Titres" },
+    { id: "albums", label: "Albums" },
+    { id: "artists", label: "Artistes" },
+  ];
 
-  const filtered = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return library.tracks;
-    return library.tracks.filter((t) =>
-      [t.title, t.artist, t.album].some((field) => field?.toLowerCase().includes(q)),
-    );
-  });
+  let tab = $state<Tab>("tracks");
+  let body = $state<HTMLElement>();
 
   const totalDuration = $derived(library.tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0));
   const notDownloaded = $derived(library.tracks.filter((t) => t.path === null).length);
+  const meta = $derived(
+    plural(library.tracks.length, "titre") +
+      (library.tracks.length > 0 ? ` · ${formatTotal(totalDuration)}` : "") +
+      (notDownloaded > 0 ? ` · ${notDownloaded} à télécharger à l'écoute` : ""),
+  );
+
+  type Group = { key: string; title: string; artist: string | null; tracks: Track[] };
+
+  /** Groups tracks by `key` (library order is kept inside each group). */
+  function groupBy(keyOf: (t: Track) => string, titleOf: (t: Track) => string): Group[] {
+    const map = new SvelteMap<string, Group>();
+    for (const t of library.tracks) {
+      const key = keyOf(t);
+      let g = map.get(key);
+      if (!g) map.set(key, (g = { key, title: titleOf(t), artist: t.artist, tracks: [] }));
+      g.tracks.push(t);
+    }
+    return [...map.values()];
+  }
+
+  // Albums and artists come from the tracks' metadata (there is no album table).
+  const albums = $derived(
+    groupBy(
+      (t) => `${t.album ?? ""}\u0000${t.artist ?? ""}`,
+      (t) => t.album ?? "Sans album",
+    ).sort((a, b) => a.title.localeCompare(b.title, "fr")),
+  );
+  const artists = $derived(
+    groupBy(
+      (t) => t.artist ?? "",
+      (t) => t.artist ?? "Artiste inconnu",
+    ).sort((a, b) => a.title.localeCompare(b.title, "fr")),
+  );
+
+  const shownAlbums = progressive(() => albums.length);
+  const shownArtists = progressive(() => artists.length);
+
+  const coverOf = (tracks: Track[]) => trackCover(tracks[0].id);
+
+  async function selectTab(id: string) {
+    if (id === tab) return;
+    tab = id as Tab;
+    await tick();
+    if (body) enterPage(body);
+  }
 
   async function addFiles() {
     const paths = await attempt(() =>
@@ -32,121 +82,161 @@
     if (paths && paths.length > 0) await library.add(paths);
   }
 
-  /** Plays the visible list (like a Spotify playlist), starting at `index`. */
-  function playFrom(index: number) {
-    player.playFrom(filtered, index, "library");
-  }
-
-  /** Plays the whole visible list; with shuffle on, from a random track. */
-  function playAll() {
-    playFrom(player.state.shuffle ? Math.floor(Math.random() * filtered.length) : 0);
-  }
-
-  // Only files in the app's music folder (downloads) are deleted; the backend checks.
-  function removeLabel(track: Track): string {
-    return track.youtube_id && track.path
-      ? "Supprimer (le fichier est mis à la corbeille)"
-      : "Retirer de la bibliothèque";
-  }
-
-  async function removeTrack(track: Track) {
-    if (player.state.track_id === track.id) await player.stop();
-    await library.remove(track.id);
+  function playList(tracks: Track[], index: number) {
+    player.playFrom(tracks, index, "library");
   }
 </script>
 
-<section class="view">
-  <TrackCollection
-    kind="Bibliothèque"
-    name="Bibliothèque"
-    meta={plural(library.tracks.length, "titre") +
-      (library.tracks.length > 0 ? ` · ${formatTotal(totalDuration)}` : "") +
-      (notDownloaded > 0 ? ` · ${notDownloaded} à télécharger à l'écoute` : "")}
-    icon="library"
-    playLabel="Lire la bibliothèque"
-    playDisabled={filtered.length === 0}
-    onplay={playAll}
-  >
-    {#snippet toolbar()}
-      {#if library.tracks.length > 0}
-        <input class="search" type="search" placeholder="Rechercher" bind:value={query} />
-      {/if}
-      <button class="pill primary" onclick={addFiles} disabled={library.adding}>
-        {library.adding ? "Ajout…" : "Ajouter des titres"}
-      </button>
-    {/snippet}
+<div class="page">
+  <header>
+    <div class="title">
+      <h1>Bibliothèque</h1>
+      <span class="meta">{meta}</span>
+    </div>
+    <div class="tools">
+      <SegmentedPills items={tabs} value={tab} onselect={selectTab} />
+      <Button onclick={addFiles} disabled={library.adding}>
+        <Icon name="plus" size={14} />{library.adding ? "Ajout…" : "Ajouter"}
+      </Button>
+    </div>
+  </header>
 
+  <div bind:this={body}>
     {#if library.tracks.length === 0}
       <div class="empty">
         <p>Ta bibliothèque est vide.</p>
-        <p class="muted">Ajoute des fichiers mp3 pour commencer.</p>
+        <p class="muted">Ajoute des fichiers mp3 ou opus pour commencer.</p>
       </div>
-    {:else if filtered.length === 0}
-      <div class="empty">
-        <p class="muted">Aucun résultat pour « {query} ».</p>
+    {:else if tab === "albums"}
+      <div class="grid albums">
+        {#each albums.slice(0, shownAlbums.count) as album (album.key)}
+          <MediaCard
+            title={album.title}
+            subtitle={album.artist ?? "Artiste inconnu"}
+            covers={coverOf(album.tracks)}
+            onplay={() => playList(album.tracks, 0)}
+            playLabel={`Lire ${album.title}`}
+          />
+        {/each}
+      </div>
+    {:else if tab === "artists"}
+      <div class="grid artists">
+        {#each artists.slice(0, shownArtists.count) as artist (artist.key)}
+          <button
+            class="artist"
+            type="button"
+            data-liquid
+            use:liquid
+            onclick={() => playList(artist.tracks, 0)}
+            title={`Lire ${artist.title}`}
+          >
+            <span class="avatar"><Cover src={coverOf(artist.tracks)} /></span>
+            <span class="name">{artist.title}</span>
+            <span class="count">{plural(artist.tracks.length, "titre")}</span>
+          </button>
+        {/each}
       </div>
     {:else}
-      <TrackTable
-        tracks={filtered}
-        onplay={playFrom}
-        actionsWidth={group.isActive ? "9.5rem" : "7.5rem"}
-      >
-        {#snippet actions(track)}
-          {#if group.isActive && track.youtube_id}
-            <AddToGroup
-              entry={{
-                youtubeId: track.youtube_id,
-                title: track.title,
-                artist: track.artist,
-                duration: track.duration || null,
-              }}
-            />
-          {/if}
-          <button
-            class="row-action"
-            class:favorite={track.favorite}
-            onclick={() => attempt(() => commands.setFavorite(track.id, !track.favorite))}
-            aria-label={track.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-            title={track.favorite
-              ? "Favori : le fichier n'est jamais supprimé"
-              : "Marquer comme favori (fichier conservé)"}
-          >
-            {track.favorite ? "★" : "☆"}
-          </button>
-          <EnqueueButton trackId={track.id} source="library" />
-          <AddToPlaylist trackId={track.id} />
-          <button
-            class="row-action"
-            onclick={() => removeTrack(track)}
-            aria-label={removeLabel(track)}
-            title={removeLabel(track)}
-          >
-            ✕
-          </button>
-        {/snippet}
-      </TrackTable>
+      <LibraryTracks
+        tracks={library.tracks}
+        source="library"
+        onplay={(i) => playList(library.tracks, i)}
+      />
     {/if}
-  </TrackCollection>
-</section>
+  </div>
+</div>
 
 <style>
-  .search {
-    width: 200px;
-    padding: 0.5rem 0.9rem;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    background: var(--surface-2);
-    color: var(--text);
-    font: inherit;
-    font-size: 0.85rem;
-    outline: none;
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
   }
-
-  .search:focus {
-    border-color: var(--muted);
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px 24px;
+    padding-top: 20px;
   }
-
+  .title {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .meta {
+    color: var(--mute);
+    font-size: 13px;
+  }
+  .tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    max-width: 100%;
+  }
+  .grid {
+    display: grid;
+  }
+  .albums {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 20px;
+  }
+  .artists {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 28px;
+  }
+  .artist {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    background: transparent;
+    color: var(--fg);
+    cursor: pointer;
+    transition: transform 0.45s var(--ease-spring);
+  }
+  .artist:hover {
+    transform: translateY(-5px);
+  }
+  .avatar {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    box-shadow:
+      inset 0 1px 0 var(--hi),
+      0 20px 40px -18px var(--shadow);
+  }
+  .name {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .count {
+    margin-top: -6px;
+    color: var(--mute);
+    font-size: 12px;
+  }
   .empty {
-    padding: 4rem 0;
+    padding: 3rem 0;
+    text-align: center;
+  }
+  .empty p {
+    margin: 0.3rem 0;
+  }
+  @container page (max-width: 640px) {
+    .albums {
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 14px;
+    }
+    .artists {
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 18px;
+    }
   }
 </style>

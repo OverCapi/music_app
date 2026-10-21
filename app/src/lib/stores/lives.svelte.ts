@@ -72,8 +72,15 @@ class Lives {
     this.channelLives = lives ?? [];
   }
 
-  /** The live video replaces the page (see `LiveVideo.svelte`). */
+  /** The live video is shown fullscreen (see `LiveOverlay.svelte`), growing from `videoFrom`
+   * (the Lives page panel) when it is known. */
   videoOpen = $state(false);
+  videoFrom = $state<DOMRect | null>(null);
+
+  expandVideo(from: DOMRect | null = null) {
+    this.videoFrom = from;
+    this.videoOpen = true;
+  }
 }
 
 export const lives = new Lives();

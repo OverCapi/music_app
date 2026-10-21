@@ -2,8 +2,10 @@
   import { onMount } from "svelte";
   import { home } from "#lib/stores/home.svelte.ts";
   import { formatTotal, plural } from "#lib/format.ts";
-  import TrackCollection from "#lib/components/ui/TrackCollection.svelte";
-  import SuggestionTable from "#lib/components/home/SuggestionTable.svelte";
+  import { youtubeCover } from "#lib/covers.ts";
+  import Button from "#lib/components/ui/Button.svelte";
+  import PageHeader from "#lib/components/ui/PageHeader.svelte";
+  import SuggestionTracks from "#lib/components/tracks/SuggestionTracks.svelte";
 
   const tracks = $derived(home.discoveries?.tracks ?? []);
   const totalDuration = $derived(tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0));
@@ -13,37 +15,45 @@
   });
 </script>
 
-<section class="view">
+<div class="page">
   {#if tracks.length === 0 && (home.loadingDiscoveries || !home.discoveriesLoaded)}
     <p class="muted">Préparation de tes découvertes…</p>
   {:else}
-    <TrackCollection
+    <PageHeader
       kind="Découvertes"
-      name="Découvertes de la semaine"
+      title="Découvertes de la semaine"
       meta={plural(tracks.length, "titre") +
         (totalDuration > 0 ? ` · ${formatTotal(totalDuration)}` : "")}
-      icon="note"
+      covers={tracks.slice(0, 4).map((t) => youtubeCover(t.youtube_id))}
       playLabel="Lire les découvertes"
       playDisabled={tracks.length === 0}
       onplay={() => home.playAll(tracks)}
     >
-      {#snippet toolbar()}
-        <button
-          class="pill secondary"
-          onclick={() => home.refreshDiscoveries()}
-          disabled={home.loadingDiscoveries}
-        >
+      {#snippet extra()}
+        <Button onclick={() => home.refreshDiscoveries()} disabled={home.loadingDiscoveries}>
           {home.loadingDiscoveries ? "Génération…" : "Régénérer"}
-        </button>
+        </Button>
       {/snippet}
+    </PageHeader>
 
-      {#if tracks.length === 0}
-        <div class="empty">
-          <p>Écoute quelques titres pour que je te propose des découvertes.</p>
-        </div>
-      {:else}
-        <SuggestionTable {tracks} onplay={(i) => home.play(tracks, i)} />
-      {/if}
-    </TrackCollection>
+    {#if tracks.length === 0}
+      <div class="empty">
+        <p>Écoute quelques titres pour que je te propose des découvertes.</p>
+      </div>
+    {:else}
+      <SuggestionTracks {tracks} onplay={(i) => home.play(tracks, i)} />
+    {/if}
   {/if}
-</section>
+</div>
+
+<style>
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+  .empty {
+    padding: 3rem 0;
+    text-align: center;
+  }
+</style>

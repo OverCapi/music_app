@@ -1,21 +1,18 @@
 <script lang="ts">
+  /** Picture of the live playing in the audio engine: hls.js on the `live://` relay, muted.
+   * Fills its parent (the parent sets the size). The sound never comes from here; the picture
+   * follows pause/resume and may lag a few seconds behind the sound. */
   import { onMount } from "svelte";
   import Hls from "hls.js";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { lives } from "#lib/stores/lives.svelte.ts";
   import { player } from "#lib/stores/player.svelte.ts";
+
+  let { fit = "cover" }: { fit?: "cover" | "contain" } = $props();
 
   let video = $state<HTMLVideoElement>();
   const live = $derived(player.state.live);
   const playing = $derived(player.state.playing);
 
-  // The live ended (stopped, or another track started): nothing left to show.
-  $effect(() => {
-    if (!live) lives.videoOpen = false;
-  });
-
-  // The sound comes from the audio engine; this is only the picture (muted), which
-  // follows pause/resume. It may lag a few seconds behind the sound.
   $effect(() => {
     if (!video) return;
     if (playing) video.play().catch(() => {});
@@ -43,47 +40,14 @@
   });
 </script>
 
-<section class="view">
-  <div class="stage">
-    <video bind:this={video} muted autoplay playsinline></video>
-  </div>
-  <p class="title">{live?.title ?? ""}</p>
-</section>
+<video bind:this={video} muted autoplay playsinline style:object-fit={fit}></video>
 
 <style>
-  .view {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 0.75rem;
-    overflow: hidden;
-  }
-
-  .stage {
-    display: grid;
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    place-items: center;
-    overflow: hidden;
-    container-type: size;
-  }
-
-  /* Largest 16:9 box inside the stage, whatever the window size: no black bars, and
-     the stream's intrinsic size can't make it overflow when the window shrinks. */
   video {
-    width: min(100cqw, 100cqh * 16 / 9);
-    aspect-ratio: 16 / 9;
-    border-radius: 16px;
-    box-shadow: var(--shadow-float);
-    object-fit: cover;
-  }
-
-  .title {
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 700;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
   }
 </style>

@@ -51,3 +51,19 @@ pub fn remove_from_playlist(
 ) -> AppResult<()> {
     playlists.remove_track(id, track_id)
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn reorder_playlists(playlists: State<'_, Playlists>, ids: Vec<PlaylistId>) -> AppResult<()> {
+    playlists.reorder(&ids)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_playlist_pinned(
+    playlists: State<'_, Playlists>,
+    id: PlaylistId,
+    pinned: bool,
+) -> AppResult<()> {
+    playlists.set_pinned(id, pinned)
+}
