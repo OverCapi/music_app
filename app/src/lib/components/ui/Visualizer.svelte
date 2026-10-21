@@ -25,6 +25,14 @@
 
   let root = $state<HTMLElement>();
 
+  /** Loudness 0..1 of bar `i`'s slice of `levels`, or `undefined` without music data. */
+  function level(i: number): number | undefined {
+    if (!levels) return undefined;
+    const lo = Math.floor((i * levels.length) / bars);
+    const hi = Math.max(lo + 1, Math.floor(((i + 1) * levels.length) / bars));
+    return Math.max(...levels.slice(lo, hi));
+  }
+
   onMount(() => {
     const els = Array.from(root!.children) as HTMLElement[];
     const v = els.map(() => (intro ? 0 : 0.07));
@@ -35,18 +43,12 @@
     const tick = (t: number) => {
       let settled = true;
       els.forEach((b, i) => {
-        let target =
-          levels?.[i] ??
-          (playing
-            ? Math.min(
-                1,
-                0.12 +
-                  0.6 *
-                    m *
-                    (Math.abs(Math.sin(t / (160 + (i % 9) * 37) + i * 1.7)) * 0.65 +
-                      Math.abs(Math.sin(t / (520 + (i % 5) * 90) + i)) * 0.45),
-              )
-            : 0.07);
+        // The usual organic wave; the music scales each bar's height.
+        const wave =
+          Math.abs(Math.sin(t / (160 + (i % 9) * 37) + i * 1.7)) * 0.65 +
+          Math.abs(Math.sin(t / (520 + (i % 5) * 90) + i)) * 0.45;
+        const gain = 0.1 + 2.4 * (level(i) ?? 0.6) ** 2.5;
+        let target = playing ? Math.min(1, 0.12 + 0.6 * m * wave * gain) : 0.07;
         if (intro) {
           const e = Math.max(0, Math.min(1, (t - start - 180 - i * 16) / 520));
           target *= 1 - Math.pow(1 - e, 3);
@@ -56,7 +58,7 @@
         if (Math.abs(target - v[i]) > 0.004) settled = false;
       });
       // Paused and settled: nothing to animate, stop the loop (restarted by `playing`).
-      raf = settled && !playing && !levels ? 0 : requestAnimationFrame(tick);
+      raf = settled && !playing ? 0 : requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     stop = () => cancelAnimationFrame(raf);

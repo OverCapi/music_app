@@ -28,6 +28,12 @@ class Player {
     live: null,
   });
   queue = $state<QueueState>({ items: [], current: null });
+  /** Spectrum of the audio being played (pushed by the engine while playing). */
+  #levels = $state.raw<number[]>([]);
+  /** Spectrum bands for the visualizers; `undefined` while paused (they idle). */
+  get levels(): number[] | undefined {
+    return this.state.playing && this.#levels.length ? this.#levels : undefined;
+  }
   /** `Date.now()` when `state.position` was received, to interpolate between events. */
   #receivedAt = Date.now();
 
@@ -125,6 +131,7 @@ class Player {
     const unlisteners = await Promise.all([
       events.playerChanged.listen(({ payload }) => this.#setState(payload)),
       events.queueChanged.listen(({ payload }) => (this.queue = payload)),
+      events.audioLevels.listen(({ payload }) => (this.#levels = payload.map((l) => l ?? 0))),
     ]);
     const [state, queue] = await Promise.all([
       attempt(() => commands.getPlayerState()),

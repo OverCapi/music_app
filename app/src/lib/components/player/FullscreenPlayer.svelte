@@ -72,6 +72,21 @@
     ).onfinish = onclose;
   }
 
+  function volume(e: PointerEvent) {
+    const el = e.currentTarget as HTMLElement;
+    const set = (x: number) => {
+      const r = el.getBoundingClientRect();
+      player.setVolume(Math.max(0, Math.min(1, (x - r.left) / r.width)));
+    };
+    set(e.clientX);
+    const move = (ev: PointerEvent) => set(ev.clientX);
+    const up = () => (
+      removeEventListener("pointermove", move),
+      removeEventListener("pointerup", up)
+    );
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", up);
+  }
   function seek(e: MouseEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     player.seek(((e.clientX - r.left) / r.width) * player.duration);
@@ -82,7 +97,14 @@
 
 <div class="full" bind:this={root}>
   <div class="viz">
-    <Visualizer playing={s.playing} bars={48} gap={6} color="var(--fg)" intro />
+    <Visualizer
+      playing={s.playing}
+      levels={player.levels}
+      bars={48}
+      gap={6}
+      color="var(--fg)"
+      intro
+    />
   </div>
   <button class="halo-btn back glass" use:liquid onclick={close} aria-label="Fermer"
     ><Icon name="chevronDown" size={20} /></button
@@ -134,6 +156,14 @@
           ><Icon name={s.repeat === "one" ? "repeatOne" : "repeat"} size={20} /></button
         >
       </div>
+      <div class="volume">
+        <Icon name="volume" size={18} />
+        <button class="vol" onpointerdown={volume} aria-label="Volume">
+          <span class="rail"
+            ><span class="fill vfill" style:width="{player.volume * 100}%"></span></span
+          >
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -153,7 +183,7 @@
     left: 48px;
     right: 48px;
     bottom: 24px;
-    height: 120px;
+    height: 72px;
     opacity: 0.5;
     pointer-events: none;
   }
@@ -262,6 +292,27 @@
     justify-content: space-between;
     margin-top: 20px;
   }
+  .volume {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .vol {
+    flex: 1;
+    height: 18px;
+    padding: 6px 0;
+    box-sizing: border-box;
+    background: none;
+    touch-action: none;
+  }
+  .vol .rail {
+    height: 100%;
+  }
+  .vfill {
+    background: var(--fg);
+    box-shadow: none;
+  }
   .halo-btn {
     width: 44px;
     height: 44px;
@@ -270,7 +321,7 @@
     .viz {
       left: 16px;
       right: 16px;
-      height: 80px;
+      height: 56px;
     }
     .grid {
       grid-template-columns: 1fr;

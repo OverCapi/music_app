@@ -16,6 +16,8 @@ mod group;
 mod history;
 mod library;
 mod lives;
+#[cfg(target_os = "macos")]
+mod media_controls;
 mod mixes;
 mod playlists;
 mod radio;
@@ -130,6 +132,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         ])
         .events(collect_events![
             audio::PlayerChanged,
+            audio::AudioLevels,
             audio::QueueChanged,
             library::LibraryChanged,
             playlists::PlaylistsChanged,
@@ -284,6 +287,8 @@ pub fn run() {
                 history.recorder(),
                 track_fetcher(handle.clone()),
             ));
+            #[cfg(target_os = "macos")]
+            media_controls::init(&handle);
             let taste = taste::Taste::new(history.clone(), feedback.clone());
             let mixes = mixes::Mixes::new(
                 taste.clone(),

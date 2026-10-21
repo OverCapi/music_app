@@ -14,12 +14,13 @@ use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 use tauri::AppHandle;
 use tauri_specta::Event;
 
+use super::analyzer::{Ring, Tap};
 use super::listen::Listen;
 use super::live::{LiveError, LiveSource};
 use super::opus::OpusSource;
 use super::{
-    GroupEndedCallback, GroupStart, PlayerChanged, PlayerState, QueueChanged, QueueItem,
-    RandomPicker, Shared, TrackFetcher,
+    AudioLevels, GroupEndedCallback, GroupStart, PlayerChanged, PlayerState, QueueChanged,
+    QueueItem, RandomPicker, Shared, TrackFetcher,
 };
 use crate::db::now_secs;
 use crate::error::{AppError, AppResult};
@@ -33,6 +34,10 @@ type TrackSource = Box<dyn Source + Send>;
 const TICK: Duration = Duration::from_millis(100);
 /// While playing, position-only updates are pushed at most this often.
 const POSITION_INTERVAL: Duration = Duration::from_millis(250);
+/// While playing, spectrum bands are pushed this often (also the loop's wait).
+const LEVELS_INTERVAL: Duration = Duration::from_millis(33);
+/// Bars of the spectrum sent to the UI.
+const LEVEL_BANDS: usize = 48;
 /// A seek past the end that fails within this margin counts as "track over".
 const END_MARGIN_SECS: f64 = 0.5;
 
@@ -122,6 +127,8 @@ fn run(parts: EngineParts) {
         app,
         published: PlayerState::default(),
         published_at: Instant::now(),
+        ring: Ring::new(),
+        levels_at: Instant::now(),
     };
 
     loop {
@@ -134,6 +141,11 @@ fn run(parts: EngineParts) {
             .map_or(TICK, |at| {
                 at.saturating_duration_since(Instant::now()).min(TICK)
             });
+        let timeout = if engine.shared().status.playing {
+            timeout.min(LEVELS_INTERVAL)
+        } else {
+            timeout
+        };
         match rx.recv_timeout(timeout) {
             Ok(cmd) => engine.handle(cmd),
             Err(RecvTimeoutError::Timeout) => {}
@@ -142,6 +154,7 @@ fn run(parts: EngineParts) {
         engine.start_if_due();
         engine.sync_state();
         engine.publish();
+        engine.publish_levels();
     }
     // App shutting down: the current listen still counts.
     engine.finish_listen(false);
@@ -200,6 +213,9 @@ struct Engine {
     /// Last [`PlayerChanged`] payload sent, and when.
     published: PlayerState,
     published_at: Instant,
+    /// Last samples played, analysed into [`AudioLevels`].
+    ring: Arc<Ring>,
+    levels_at: Instant,
 }
 
 struct GroupMode {
@@ -291,6 +307,17 @@ impl Engine {
         }
     }
 
+    /// Pushes the spectrum of what is playing, at most every [`LEVELS_INTERVAL`].
+    fn publish_levels(&mut self) {
+        if !self.shared().status.playing || self.levels_at.elapsed() < LEVELS_INTERVAL {
+            return;
+        }
+        self.levels_at = Instant::now();
+        if let Err(e) = AudioLevels(self.ring.bands(LEVEL_BANDS)).emit(&self.app) {
+            tracing::warn!("emit AudioLevels failed: {e}");
+        }
+    }
+
     /// Emits [`QueueChanged`] if the queue changed, and [`PlayerChanged`] if the state
     /// changed (position-only changes at most every [`POSITION_INTERVAL`]).
     fn publish(&mut self) {
@@ -314,6 +341,8 @@ impl Engine {
         if position_only && self.published_at.elapsed() < POSITION_INTERVAL {
             return;
         }
+        #[cfg(target_os = "macos")]
+        crate::media_controls::sync(&self.app, &state);
         if let Err(e) = PlayerChanged(state.clone()).emit(&self.app) {
             tracing::warn!("emit PlayerChanged failed: {e}");
         }
@@ -388,7 +417,7 @@ impl Engine {
                     player.pause();
                     let mut s = self.shared.lock().unwrap();
                     player.set_volume(s.status.volume);
-                    player.append(source);
+                    player.append(Tap::new(source, self.ring.clone()));
                     self.player = Some(player);
                     self.listen = Some(Listen::new(track, PlaySource::Group, now_secs(), duration));
                     if let Some(group) = &mut self.group {
@@ -525,7 +554,7 @@ impl Engine {
                 let player = Player::connect_new(self.device.mixer());
                 let mut s = self.shared.lock().unwrap();
                 player.set_volume(s.status.volume);
-                player.append(source);
+                player.append(Tap::new(source, self.ring.clone()));
                 s.status.playing = true;
                 s.status.position = 0.0;
                 drop(s);
@@ -574,7 +603,7 @@ impl Engine {
                     let player = Player::connect_new(self.device.mixer());
                     let mut s = self.shared.lock().unwrap();
                     player.set_volume(s.status.volume);
-                    player.append(source);
+                    player.append(Tap::new(source, self.ring.clone()));
                     self.player = Some(player);
                     self.live_error = None;
                     s.status.live = None;

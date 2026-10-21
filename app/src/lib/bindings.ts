@@ -132,6 +132,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	audioLevels: makeEvent<AudioLevels>("audio-levels"),
 	downloadProgress: makeEvent<DownloadProgress>("download-progress"),
 	feedbackChanged: makeEvent<FeedbackChanged>("feedback-changed"),
 	groupChanged: makeEvent<GroupChanged>("group-changed"),
@@ -167,6 +168,9 @@ export type ArtistFeedback = {
 	label: string,
 	kind: FeedbackKind,
 };
+
+/**  Spectrum of the audio being played (levels 0..=1), pushed ~30 times a second while playing. */
+export type AudioLevels = (number | null)[];
 
 export type Discovery = {
 	/**  Unix timestamp (seconds) of the start of the week the tracks belong to. */

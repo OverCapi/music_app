@@ -88,7 +88,9 @@
                 alt=""
               />{/key}
           {/if}
-          <span class="viz"><Visualizer playing={s.playing} bars={22} /></span>
+          <span class="viz"
+            ><Visualizer playing={s.playing} levels={player.levels} bars={22} /></span
+          >
         </button>
         <span class="now-meta">
           <span class="t">{track?.title ?? ""}</span>

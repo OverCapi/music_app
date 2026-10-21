@@ -16,6 +16,7 @@
 //! The engine pushes [`PlayerChanged`] on every state change (and a few times per
 //! second while playing) and [`QueueChanged`] on every queue change: the UI never polls.
 
+mod analyzer;
 pub mod commands;
 mod engine;
 mod listen;
@@ -124,6 +125,10 @@ pub struct QueueState {
 
 #[derive(Clone, Debug, Serialize, specta::Type, tauri_specta::Event)]
 pub struct PlayerChanged(pub PlayerState);
+
+/// Spectrum of the audio being played (levels 0..=1), pushed ~30 times a second while playing.
+#[derive(Clone, Debug, Serialize, specta::Type, tauri_specta::Event)]
+pub struct AudioLevels(pub Vec<f32>);
 
 #[derive(Clone, Debug, Serialize, specta::Type, tauri_specta::Event)]
 pub struct QueueChanged(pub QueueState);

@@ -175,7 +175,15 @@
     </div>
 
     <div class="end">
-      <span class="eq"><Visualizer {playing} bars={4} gap={3} color="var(--accent)" /></span>
+      <span class="eq"
+        ><Visualizer
+          {playing}
+          levels={groupMode ? undefined : player.levels}
+          bars={4}
+          gap={3}
+          color="var(--accent)"
+        /></span
+      >
       {#if ytId}
         <button
           class="halo-btn sm"
