@@ -112,7 +112,7 @@
     {@const current = player.state.track_id === track.id}
     <TrackRow
       index={i}
-      cover={trackCover(track.id)}
+      cover={trackCover(track)}
       {current}
       playing={current && player.state.playing}
       cols="minmax(0,2fr) minmax(0,1.3fr) minmax(0,1.3fr) 48px 34px"

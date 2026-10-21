@@ -79,7 +79,7 @@
       title={playlist.name}
       meta={plural(tracks.length, "titre") +
         (tracks.length > 0 ? ` · ${formatTotal(totalDuration)}` : "")}
-      covers={tracks.slice(0, 4).map((t) => trackCover(t.id))}
+      covers={tracks.slice(0, 4).map((t) => trackCover(t))}
       playLabel="Lire la playlist"
       playDisabled={tracks.length === 0}
       onplay={playAll}

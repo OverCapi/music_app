@@ -26,6 +26,18 @@
 
   let tab = $state<Tab>("tracks");
   let body = $state<HTMLElement>();
+  let query = $state("");
+
+  const norm = (s: string | null) =>
+    (s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const needle = $derived(norm(query.trim()));
+  const filtered = $derived(
+    needle
+      ? library.tracks.filter((t) =>
+          norm(`${t.title} ${t.artist ?? ""} ${t.album ?? ""}`).includes(needle),
+        )
+      : library.tracks,
+  );
 
   const totalDuration = $derived(library.tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0));
   const notDownloaded = $derived(library.tracks.filter((t) => t.path === null).length);
@@ -40,7 +52,7 @@
   /** Groups tracks by `key` (library order is kept inside each group). */
   function groupBy(keyOf: (t: Track) => string, titleOf: (t: Track) => string): Group[] {
     const map = new SvelteMap<string, Group>();
-    for (const t of library.tracks) {
+    for (const t of filtered) {
       const key = keyOf(t);
       let g = map.get(key);
       if (!g) map.set(key, (g = { key, title: titleOf(t), artist: t.artist, tracks: [] }));
@@ -66,7 +78,7 @@
   const shownAlbums = progressive(() => albums.length);
   const shownArtists = progressive(() => artists.length);
 
-  const coverOf = (tracks: Track[]) => trackCover(tracks[0].id);
+  const coverOf = (tracks: Track[]) => trackCover(tracks[0]);
 
   async function selectTab(id: string) {
     if (id === tab) return;
@@ -94,6 +106,13 @@
       <span class="meta">{meta}</span>
     </div>
     <div class="tools">
+      <input
+        class="field search"
+        type="search"
+        placeholder="Rechercher…"
+        aria-label="Rechercher dans la bibliothèque"
+        bind:value={query}
+      />
       <SegmentedPills items={tabs} value={tab} onselect={selectTab} />
       <Button onclick={addFiles} disabled={library.adding}>
         <Icon name="plus" size={14} />{library.adding ? "Ajout…" : "Ajouter"}
@@ -107,6 +126,8 @@
         <p>Ta bibliothèque est vide.</p>
         <p class="muted">Ajoute des fichiers mp3 ou opus pour commencer.</p>
       </div>
+    {:else if filtered.length === 0}
+      <div class="empty"><p class="muted">Aucun résultat pour « {query} ».</p></div>
     {:else if tab === "albums"}
       <div class="grid albums">
         {#each albums.slice(0, shownAlbums.count) as album (album.key)}
@@ -137,11 +158,7 @@
         {/each}
       </div>
     {:else}
-      <LibraryTracks
-        tracks={library.tracks}
-        source="library"
-        onplay={(i) => playList(library.tracks, i)}
-      />
+      <LibraryTracks tracks={filtered} source="library" onplay={(i) => playList(filtered, i)} />
     {/if}
   </div>
 </div>
@@ -175,6 +192,10 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 10px;
+    max-width: 100%;
+  }
+  .search {
+    width: 200px;
     max-width: 100%;
   }
   .grid {

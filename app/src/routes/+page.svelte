@@ -53,7 +53,7 @@
   );
   const resume = $derived(
     loaded
-      ? { title: loaded.title, artist: loaded.artist, cover: trackCover(loaded.id) }
+      ? { title: loaded.title, artist: loaded.artist, cover: trackCover(loaded) }
       : playable[0]
         ? {
             title: playable[0].title,

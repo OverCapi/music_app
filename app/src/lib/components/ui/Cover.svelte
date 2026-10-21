@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Icon from "./Icon.svelte";
+
   /** Fills its parent (which sets size, radius and `position: relative`; `overflow: hidden`):
    * one image, or a 2×2 mosaic when `mosaic` and at least 2 sources are given (missing tiles
    * stay blank). */
@@ -15,7 +17,7 @@
     {#if url && !failed[url]}
       <img src={url} alt="" loading="lazy" onerror={() => (failed[url] = true)} />
     {:else}
-      <span class="blank"></span>
+      <span class="blank"><Icon name="note" size={24} /></span>
     {/if}
   {/each}
 </span>
@@ -30,6 +32,12 @@
   }
   .cover.mosaic {
     grid-template: 1fr 1fr / 1fr 1fr;
+  }
+  .blank {
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    opacity: 0.6;
   }
   img,
   .blank {

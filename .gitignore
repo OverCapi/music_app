@@ -16,3 +16,5 @@ server.db*
 agent-transcripts
 .cmem-projects
 titres_likes*.tsv
+CLAUDE.md
+AGENTS.md
