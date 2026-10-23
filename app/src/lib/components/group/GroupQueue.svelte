@@ -5,9 +5,12 @@
   import { progressive } from "#lib/progressive.svelte.ts";
   import { formatTime } from "#lib/format.ts";
   import { youtubeCover } from "#lib/covers.ts";
+  import EmptyState from "#lib/components/ui/EmptyState.svelte";
   import Avatar from "#lib/components/ui/Avatar.svelte";
   import IconButton from "#lib/components/ui/IconButton.svelte";
   import TrackList from "#lib/components/ui/TrackList.svelte";
+  import TrackCell from "#lib/components/ui/TrackCell.svelte";
+  import TrackMain from "#lib/components/ui/TrackMain.svelte";
   import TrackRow from "#lib/components/ui/TrackRow.svelte";
   import GroupTrackStatus from "#lib/components/group/GroupTrackStatus.svelte";
 
@@ -20,7 +23,7 @@
 </script>
 
 {#if queue.length === 0}
-  <div class="empty">
+  <EmptyState>
     <p>La file du groupe est vide.</p>
     <p class="muted">
       Ajoute des titres depuis
@@ -29,7 +32,7 @@
       <a href={resolve("/library")}>bibliothèque</a>
       téléchargés depuis YouTube.
     </p>
-  </div>
+  </EmptyState>
 {:else}
   <TrackList>
     {#each queue.slice(0, visible.count) as entry, i (entry.entry_id)}
@@ -43,17 +46,16 @@
         colsSmall="minmax(0,1fr) 28px 34px"
         onplay={() => group.playEntry(entry.entry_id)}
       >
-        <span class="tr-main">
-          <span class="tr-title">{entry.title}</span>
-          <span class="tr-sub">{entry.artist ?? "Artiste inconnu"}</span>
-        </span>
-        <span class="by hide-sm">
-          <Avatar name={entry.added_by} size={22} />
-          <span class="tr-sub">{entry.added_by === view.me ? "toi" : entry.added_by}</span>
-        </span>
-        <span class="tr-dur hide-sm">
+        <TrackMain title={entry.title} subtitle={entry.artist ?? "Artiste inconnu"} />
+        <TrackCell kind="plain" hideSmall>
+          <span class="by">
+            <Avatar name={entry.added_by} size={22} />
+            <TrackCell>{entry.added_by === view.me ? "toi" : entry.added_by}</TrackCell>
+          </span>
+        </TrackCell>
+        <TrackCell kind="dur" hideSmall>
           {entry.duration !== null ? formatTime(entry.duration) : ""}
-        </span>
+        </TrackCell>
         <GroupTrackStatus download={view.downloads[entry.youtube_id]} />
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <span class="remove" onclick={(e) => e.stopPropagation()}>
@@ -80,16 +82,5 @@
   .remove {
     display: grid;
     place-items: center;
-  }
-  .empty {
-    padding: 2rem 0;
-    text-align: center;
-  }
-  .empty p {
-    margin: 0.3rem 0;
-  }
-  .empty a {
-    color: var(--accent);
-    font-weight: 600;
   }
 </style>

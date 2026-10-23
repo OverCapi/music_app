@@ -1,4 +1,6 @@
 <script lang="ts">
+  import CardGrid from "#lib/components/ui/CardGrid.svelte";
+  import Field from "#lib/components/ui/Field.svelte";
   import { onMount } from "svelte";
   import type { LiveChannel, LiveStream } from "#lib/bindings.ts";
   import { progressive } from "#lib/progressive.svelte.ts";
@@ -27,19 +29,19 @@
 </script>
 
 {#snippet liveGrid(items: LiveStream[])}
-  <div class="grid" class:stale={lives.loading}>
+  <CardGrid min={230} minSmall="100%" dim={lives.loading}>
     {#each items.slice(0, shownLives.count) as stream (stream.id)}
       <LiveCard {stream} playing={stream.id === playingId} onplay={() => lives.play(stream)} />
     {/each}
-  </div>
+  </CardGrid>
 {/snippet}
 
 {#snippet channelGrid(items: LiveChannel[])}
-  <div class="channels">
+  <CardGrid min={130} gap={22} minSmall={104}>
     {#each items as c (c.id)}
       <ChannelCircle channel={c} sub={sub(c)} onclick={() => lives.openChannel(c)} />
     {/each}
-  </div>
+  </CardGrid>
 {/snippet}
 
 <div class="page">
@@ -51,8 +53,8 @@
       lives.submit();
     }}
   >
-    <input
-      class="field"
+    <Field
+      variant="grow"
       type="search"
       bind:value={lives.query}
       placeholder="Artiste, chaîne ou lien d'un live"
@@ -130,28 +132,10 @@
     max-width: 720px;
     gap: 10px;
   }
-  form .field {
-    flex: 1;
-    min-width: 0;
-  }
   .status {
     margin: 0;
     color: var(--mute);
     font-size: 14px;
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-    gap: 18px;
-    transition: opacity 0.3s;
-  }
-  .grid.stale {
-    opacity: 0.5;
-  }
-  .channels {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 22px;
   }
   .channel-head {
     display: flex;
@@ -171,13 +155,5 @@
     flex-direction: column;
     gap: 2px;
     min-width: 0;
-  }
-  @container page (max-width: 520px) {
-    .grid {
-      grid-template-columns: 1fr;
-    }
-    .channels {
-      grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-    }
   }
 </style>

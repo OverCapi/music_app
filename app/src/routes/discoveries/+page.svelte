@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from "#lib/components/ui/EmptyState.svelte";
   import { onMount } from "svelte";
   import { home } from "#lib/stores/home.svelte.ts";
   import { formatTotal, plural } from "#lib/format.ts";
@@ -37,9 +38,9 @@
     </PageHeader>
 
     {#if tracks.length === 0}
-      <div class="empty">
+      <EmptyState>
         <p>Écoute quelques titres pour que je te propose des découvertes.</p>
-      </div>
+      </EmptyState>
     {:else}
       <SuggestionTracks {tracks} onplay={(i) => home.play(tracks, i)} />
     {/if}
@@ -51,9 +52,5 @@
     display: flex;
     flex-direction: column;
     gap: 32px;
-  }
-  .empty {
-    padding: 3rem 0;
-    text-align: center;
   }
 </style>

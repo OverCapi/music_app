@@ -6,8 +6,7 @@
 
   /** One track row: index (equalizer when current), 44 px cover, then your cells.
    * `cols` is the grid for the cells AFTER the cover; `colsSmall` replaces it under 640 px
-   * (put `hide-sm` on the cells that disappear). Cell helpers: `.tr-main` (title over
-   * artist), `.tr-title`, `.tr-sub`, `.tr-dur`. */
+   * (cells that disappear: `TrackCell hideSmall`). Cells: `TrackMain`, `TrackCell`. */
   let {
     index,
     cover,
@@ -81,49 +80,11 @@
     overflow: hidden;
     border-radius: calc(var(--rs) / 2);
   }
-  .tr :global(.tr-main) {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-  .tr :global(.tr-title),
-  .tr :global(.tr-sub) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .tr :global(.tr-title) {
-    font-size: 14px;
-    font-weight: 600;
-  }
-  .tr :global(.tr-main > .tr-sub) {
-    font-size: 12px;
-  }
-  .tr :global(.tr-sub) {
-    color: var(--mute);
-    font-size: 13px;
-  }
-  .tr :global(.tr-dur) {
-    color: var(--mute);
-    font-family: var(--mono);
-    font-size: 12px;
-    text-align: right;
-  }
-  .tr :global(.show-sm) {
-    display: none;
-  }
   @container tracks (max-width: 640px) {
     .tr {
       grid-template-columns: 28px 44px var(--cols-sm);
       gap: 12px;
       padding: 8px 8px;
-    }
-    .tr :global(.hide-sm) {
-      display: none;
-    }
-    .tr :global(.show-sm) {
-      display: block;
     }
   }
 </style>

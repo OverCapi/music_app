@@ -11,6 +11,8 @@
   import NotDownloaded from "#lib/components/library/NotDownloaded.svelte";
   import RowMenu, { type MenuItem } from "#lib/components/ui/RowMenu.svelte";
   import TrackList from "#lib/components/ui/TrackList.svelte";
+  import TrackCell from "#lib/components/ui/TrackCell.svelte";
+  import TrackMain from "#lib/components/ui/TrackMain.svelte";
   import TrackRow from "#lib/components/ui/TrackRow.svelte";
 
   /** Rows for library tracks with the "…" menu: favorite, queue, playlists, group, remove.
@@ -120,17 +122,15 @@
       title={track.path ?? "Pas encore téléchargé"}
       onplay={() => onplay(i)}
     >
-      <span class="tr-main">
-        <span class="line">
-          <span class="tr-title">{track.title}</span>
+      <TrackMain title={track.title} subtitle={track.artist ?? "Artiste inconnu"} subtitleSmallOnly>
+        {#snippet badges()}
           {#if track.favorite}<span class="fav" title="Favori">★</span>{/if}
           {#if track.path === null}<NotDownloaded youtubeId={track.youtube_id} />{/if}
-        </span>
-        <span class="tr-sub show-sm">{track.artist ?? "Artiste inconnu"}</span>
-      </span>
-      <span class="tr-sub hide-sm">{track.artist ?? "Artiste inconnu"}</span>
-      <span class="tr-sub hide-sm">{track.album ?? ""}</span>
-      <span class="tr-dur">{formatTime(track.duration)}</span>
+        {/snippet}
+      </TrackMain>
+      <TrackCell hideSmall>{track.artist ?? "Artiste inconnu"}</TrackCell>
+      <TrackCell hideSmall>{track.album ?? ""}</TrackCell>
+      <TrackCell kind="dur">{formatTime(track.duration)}</TrackCell>
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <span class="menu" onclick={(e) => e.stopPropagation()}>
         <RowMenu items={menu(track)} />
@@ -140,12 +140,6 @@
 </TrackList>
 
 <style>
-  .line {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
   .fav {
     flex: none;
     color: var(--accent);

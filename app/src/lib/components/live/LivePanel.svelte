@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Badge from "#lib/components/ui/Badge.svelte";
   /** The live currently playing, shown as a 16:9 panel (max 820 px). Click to expand it
    * fullscreen, animated from this panel. */
   import { lives } from "#lib/stores/lives.svelte.ts";
@@ -19,7 +20,7 @@
     onclick={() => lives.expandVideo(panel!.getBoundingClientRect())}
   >
     {#if !lives.videoOpen}<LiveStage />{/if}
-    <span class="badge-live">EN DIRECT</span>
+    <Badge style="position:absolute;top:14px;left:14px;z-index:1">EN DIRECT</Badge>
     <span class="bar">
       <span class="title">{live.title}</span>
       <Icon name="expand" size={18} />
@@ -40,12 +41,6 @@
     box-shadow: 0 30px 60px -24px var(--shadow);
     color: #fff;
     cursor: zoom-in;
-  }
-  .badge-live {
-    position: absolute;
-    top: 14px;
-    left: 14px;
-    z-index: 1;
   }
   .bar {
     position: absolute;

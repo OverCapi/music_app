@@ -296,27 +296,22 @@ a {
   font-weight: 700;
   letter-spacing: -0.02em;
 }
-.section-title {
-  color: var(--mute);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.fade {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.fade.on {
+  opacity: 1;
+  transition: opacity 0.35s 0.12s;
 }
 .muted {
   color: var(--mute);
 }
 .mono {
   font-family: var(--mono);
-}
-.badge-live {
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--live);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
 }
 
 /* Narrow windows: tighter page gutters; the dock is shorter (mini player). */

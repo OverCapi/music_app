@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Field from "#lib/components/ui/Field.svelte";
   import { account } from "#lib/stores/account.svelte.ts";
   import Button from "#lib/components/ui/Button.svelte";
   import Panel from "#lib/components/ui/Panel.svelte";
@@ -40,8 +41,8 @@
       <span class="muted">Écoutez ensemble, chacun depuis ses fichiers.</span>
     </div>
     <div class="fields">
-      <input
-        class="field mono"
+      <Field
+        variant="mono"
         bind:value={serverUrl}
         oninput={() => (touchedUrl = true)}
         placeholder="Serveur"
@@ -49,8 +50,7 @@
         autocomplete="url"
         spellcheck="false"
       />
-      <input
-        class="field"
+      <Field
         bind:value={username}
         placeholder="Nom d'utilisateur"
         aria-label="Nom d'utilisateur"
@@ -58,8 +58,7 @@
         spellcheck="false"
         maxlength="32"
       />
-      <input
-        class="field"
+      <Field
         type="password"
         bind:value={password}
         placeholder="Mot de passe"
@@ -106,10 +105,6 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-  }
-  .mono {
-    font-family: var(--mono);
-    font-size: 13px;
   }
   .buttons {
     display: flex;

@@ -2,20 +2,24 @@
   /** Right panel: now playing (cover + visualizer), remaining time, "Ensuite" list with
    * duration and drag-to-reorder. Collapsed (66 px): round cover + thumbnails only. */
   import { tick } from "svelte";
-  import { convertFileSrc } from "@tauri-apps/api/core";
   import type { QueueItem } from "#lib/bindings.ts";
   import { library } from "#lib/stores/library.svelte.ts";
   import { player } from "#lib/stores/player.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { fileName, formatTime, formatTotal } from "#lib/format.ts";
+  import { localCover } from "#lib/covers.ts";
   import { flip, liquid } from "#lib/motion.ts";
+  import { ReorderGuard } from "#lib/reorder.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
+  import PanelHeader from "#lib/components/ui/PanelHeader.svelte";
+  import SectionLabel from "#lib/components/ui/SectionLabel.svelte";
+  import SwapImage from "#lib/components/ui/SwapImage.svelte";
   import Visualizer from "#lib/components/ui/Visualizer.svelte";
 
   let list = $state<HTMLElement>();
   let dragging = $state<number | null>(null); // queue index being dragged
-  let lock = 0;
+  const guard = new ReorderGuard();
 
   const s = $derived(player.state);
   const track = $derived(s.track_id !== null ? library.byId.get(s.track_id) : undefined);
@@ -39,14 +43,11 @@
 
   async function over(e: DragEvent, index: number) {
     e.preventDefault();
-    if (dragging === null || dragging === index || performance.now() < lock) return;
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    if (dragging < index ? e.clientY < r.top + r.height / 2 : e.clientY > r.top + r.height / 2)
-      return;
+    if (dragging === null || dragging === index || !guard.shouldSwap(e, dragging, index)) return;
     const done = flip(list!);
     const from = dragging;
     dragging = index;
-    lock = performance.now() + 90;
+    guard.arm();
     await player.moveInQueue(from, index);
     await tick();
     done();
@@ -59,21 +60,18 @@
   class:closed={ui.compact && !ui.queueOpen}
   style:width="{ui.queueWidth}px"
 >
-  <header class:collapsed={!ui.queueExpanded}>
-    <button
-      class="halo-btn chev"
-      class:flipped={!ui.queueExpanded}
-      use:liquid
-      onclick={() => (ui.queueOpen = !ui.queueOpen)}
-      aria-label={ui.queueOpen ? "Replier" : "Déplier"}
-    >
-      <Icon name="chevronRight" size={16} />
-    </button>
-    <span class="fade head" class:on={ui.queueExpanded}>
-      <span class="title">En lecture</span>
+  <PanelHeader
+    title="En lecture"
+    expanded={ui.queueExpanded}
+    open={ui.queueOpen}
+    icon="chevronRight"
+    buttonFirst
+    ontoggle={() => (ui.queueOpen = !ui.queueOpen)}
+  >
+    {#snippet trailing()}
       <span class="mono remaining">≈ {formatTotal(remaining)}</span>
-    </span>
-  </header>
+    {/snippet}
+  </PanelHeader>
 
   <div class="list" bind:this={list}>
     {#if group.isActive || s.group_mode}
@@ -81,13 +79,7 @@
     {:else}
       <div class="now" class:open={ui.queueExpanded}>
         <button class="cover" onclick={() => (ui.fullscreen = true)} aria-label="Plein écran">
-          {#if s.track_id !== null}
-            {#key s.track_id}<img
-                class="swap"
-                src={convertFileSrc(String(s.track_id), "cover")}
-                alt=""
-              />{/key}
-          {/if}
+          <SwapImage src={s.track_id !== null ? localCover(s.track_id) : undefined} />
           <span class="viz"
             ><Visualizer playing={s.playing} levels={player.levels} bars={22} /></span
           >
@@ -98,7 +90,7 @@
         </span>
       </div>
 
-      <div class="section-title fade" class:on={ui.queueExpanded}>Ensuite</div>
+      <SectionLabel inset class="fade {ui.queueExpanded ? 'on' : ''}">Ensuite</SectionLabel>
       {#each upcoming as item (item.track_id + ":" + item.index)}
         {@const t = info(item)}
         <div
@@ -118,12 +110,7 @@
           onkeydown={(e) => e.key === "Enter" && player.playIndex(item.index)}
         >
           <span class="ghost" class:on={dragging === item.index}></span>
-          <img
-            class="thumb"
-            src={convertFileSrc(String(item.track_id), "cover")}
-            alt=""
-            loading="lazy"
-          />
+          <img class="thumb" src={localCover(item.track_id)} alt="" loading="lazy" />
           <span class="fade meta" class:on={ui.queueExpanded}>
             <span class="text">
               <span class="t">{t.title}</span>
@@ -165,39 +152,6 @@
     opacity: 0;
     pointer-events: none;
     transform: translateX(calc(100% + 24px));
-  }
-  header {
-    display: flex;
-    flex: none;
-    align-items: center;
-    padding: 14px 14px 8px;
-    transition: padding 0.55s var(--ease-out);
-  }
-  /* Collapsed panel is 66 px wide: the 36 px button sits exactly in the middle. */
-  header.collapsed {
-    padding-inline: 15px;
-  }
-  header.collapsed .head {
-    flex: 0 0 0;
-  }
-  .chev :global(svg) {
-    transition: transform 0.5s;
-  }
-  .chev.flipped :global(svg) {
-    transform: rotate(180deg);
-  }
-  .head {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    gap: 8px;
-  }
-  .title {
-    flex: 1;
-    padding-left: 8px;
-    color: var(--mute);
-    font-size: 13px;
-    font-weight: 600;
   }
   .remaining {
     padding-right: 6px;
@@ -252,23 +206,6 @@
     border-radius: var(--rs);
     box-shadow: 0 20px 40px -16px var(--shadow);
   }
-  .cover img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .swap {
-    animation: swap 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-  @keyframes swap {
-    from {
-      opacity: 0.3;
-      transform: scale(1.1);
-      filter: blur(10px);
-    }
-  }
   .viz {
     position: absolute;
     left: 0;
@@ -303,11 +240,6 @@
   .now-meta .t {
     font-size: 16px;
     font-weight: 600;
-  }
-  .section-title {
-    flex: none;
-    padding: 10px 8px 6px;
-    white-space: nowrap;
   }
   .rest {
     margin: 6px 8px;
@@ -348,17 +280,6 @@
     border-radius: calc(var(--rs) - 2px);
     object-fit: cover;
     background: var(--line);
-  }
-  .fade {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    opacity: 0;
-    transition: opacity 0.15s;
-  }
-  .fade.on {
-    opacity: 1;
-    transition: opacity 0.35s 0.12s;
   }
   .meta {
     position: relative;

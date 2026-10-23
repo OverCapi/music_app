@@ -20,7 +20,9 @@
   /** "…" button + glass menu (fixed, rendered in <body> so lists never clip it). */
   import { tick } from "svelte";
   import { portal } from "#lib/actions.ts";
+  import Field from "#lib/components/ui/Field.svelte";
   import Icon from "#lib/components/ui/Icon.svelte";
+  import IconButton from "#lib/components/ui/IconButton.svelte";
 
   let { items, label = "Plus d'actions" }: { items: MenuItem[]; label?: string } = $props();
 
@@ -31,7 +33,7 @@
   let prompting = $state<MenuItem | null>(null);
   let draft = $state("");
   let pos = $state({ top: 0, left: 0, maxHeight: 320 });
-  let button = $state<HTMLButtonElement>();
+  let button = $state<HTMLElement>();
   let menu = $state<HTMLElement>();
   let input = $state<HTMLInputElement>();
 
@@ -95,20 +97,18 @@
 
 <svelte:window onclick={onwindow} onkeydown={(e) => open && e.key === "Escape" && close()} />
 
-<button
-  bind:this={button}
-  class="more halo-btn"
-  class:open
-  type="button"
-  aria-label={label}
+<IconButton
+  bind:el={button}
+  class="more {open ? 'open' : ''}"
+  icon="more"
+  iconSize={16}
+  size={34}
+  {label}
   aria-haspopup="menu"
   aria-expanded={open}
-  title={label}
   onclick={toggle}
-  ondblclick={(e) => e.stopPropagation()}
->
-  <Icon name="more" size={16} />
-</button>
+  ondblclick={(e: MouseEvent) => e.stopPropagation()}
+/>
 
 {#if open}
   <div
@@ -140,10 +140,10 @@
     {#each shown as item (item.label)}
       {#if prompting === item && item.prompt}
         <form onsubmit={submit}>
-          <input
-            bind:this={input}
+          <Field
+            variant="menu"
+            bind:el={input}
             bind:value={draft}
-            class="field"
             maxlength="100"
             placeholder={item.prompt.placeholder}
           />
@@ -169,12 +169,10 @@
 {/if}
 
 <style>
-  .more {
-    width: 34px;
-    height: 34px;
+  :global(.halo-btn.more) {
     color: var(--mute);
   }
-  .more.open {
+  :global(.halo-btn.more.open) {
     color: var(--fg);
   }
   .menu {
@@ -229,10 +227,6 @@
   }
   form {
     padding: 2px;
-  }
-  .field {
-    width: 100%;
-    height: 38px;
   }
   @keyframes pop {
     from {
