@@ -69,7 +69,10 @@ class Home {
     tracks: { youtube_id: string; title: string; artist: string | null; duration: number | null }[],
     index: number,
   ) {
-    return attempt(() => commands.playSuggestions(tracks, index));
+    return attempt(() => commands.playSuggestions(
+        tracks.map((t) => ({ ...t, duration: t.duration ?? 0 })),
+        index,
+      ));
   }
 
   /** Plays the whole list; with shuffle on, from a random track (like a playlist). */
