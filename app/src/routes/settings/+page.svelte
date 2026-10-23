@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Field from "#lib/components/ui/Field.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { storage } from "#lib/stores/storage.svelte.ts";
   import { sync } from "#lib/stores/sync.svelte.ts";
@@ -9,6 +10,7 @@
   import Button from "#lib/components/ui/Button.svelte";
   import Checkbox from "#lib/components/ui/Checkbox.svelte";
   import Chip from "#lib/components/ui/Chip.svelte";
+  import StackCard from "#lib/components/ui/StackCard.svelte";
   import Panel from "#lib/components/ui/Panel.svelte";
   import ProgressBar from "#lib/components/ui/ProgressBar.svelte";
   import Section from "#lib/components/ui/Section.svelte";
@@ -109,7 +111,7 @@
   </Section>
 
   <Section title="Synchronisation">
-    <Panel radius={12} class="card-s">
+    <StackCard>
       <div class="top">
         <div class="what">
           <span class="name">YouTube Music</span>
@@ -163,9 +165,9 @@
           <p class="report error">{error}</p>
         {/each}
       {/if}
-    </Panel>
+    </StackCard>
 
-    <Panel radius={12} class="card-s">
+    <StackCard>
       <div class="top">
         <div class="what">
           <span class="name">Spotify</span>
@@ -185,11 +187,11 @@
           {#if r.not_found_path}Liste : {r.not_found_path}{/if}
         </p>
       {/if}
-    </Panel>
+    </StackCard>
   </Section>
 
   <Section title="Stockage">
-    <Panel radius={12} class="card-s">
+    <StackCard>
       {#if storage.settings}
         {@const s = storage.settings}
         <p class="muted small">
@@ -206,16 +208,19 @@
         </div>
         <div class="line days">
           <span class="muted">Supprimer les fichiers après</span>
-          <input
-            class="field num"
+          <Field
+            variant="num"
             type="number"
             min="1"
             value={s.days}
             aria-label="Nombre de jours"
-            onchange={(e) =>
+            onchange={(e: Event) =>
               storage.save({
                 ...s,
-                days: Math.max(1, Math.floor(Number(e.currentTarget.value)) || 1),
+                days: Math.max(
+                  1,
+                  Math.floor(Number((e.currentTarget as HTMLInputElement).value)) || 1,
+                ),
               })}
           />
           <span class="muted">jours sans écoute</span>
@@ -268,7 +273,7 @@
       {:else}
         <p class="muted">Chargement…</p>
       {/if}
-    </Panel>
+    </StackCard>
   </Section>
 </div>
 
@@ -402,13 +407,6 @@
       0 0 0 4px oklch(0.8 0.13 var(--h));
   }
 
-  /* Cards */
-  .page :global(.card-s) {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 22px 24px;
-  }
   .top {
     display: flex;
     flex-wrap: wrap;
@@ -461,12 +459,6 @@
     flex-wrap: wrap;
     gap: 12px;
     font-size: 14px;
-  }
-  .num {
-    width: 76px;
-    height: 38px;
-    text-align: center;
-    font-family: var(--mono);
   }
   .buttons {
     display: flex;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Field from "#lib/components/ui/Field.svelte";
   import { search } from "#lib/stores/search.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
   import { home } from "#lib/stores/home.svelte.ts";
@@ -12,6 +13,8 @@
   import Section from "#lib/components/ui/Section.svelte";
   import Skeleton from "#lib/components/ui/Skeleton.svelte";
   import TrackList from "#lib/components/ui/TrackList.svelte";
+  import TrackCell from "#lib/components/ui/TrackCell.svelte";
+  import TrackMain from "#lib/components/ui/TrackMain.svelte";
   import TrackRow from "#lib/components/ui/TrackRow.svelte";
   import SuggestionTracks from "#lib/components/tracks/SuggestionTracks.svelte";
 
@@ -35,8 +38,8 @@
         search.search();
       }}
     >
-      <input
-        class="field"
+      <Field
+        variant="pill"
         type="search"
         bind:value={search.query}
         placeholder="Rechercher"
@@ -81,15 +84,14 @@
             cols="minmax(0,2fr) minmax(0,1.3fr) 48px auto"
             colsSmall="minmax(0,1fr) auto"
           >
-            <span class="tr-main">
-              <span class="tr-title">{result.title}</span>
+            <TrackMain title={result.title}>
               {#if result.details_pending}
                 <span class="ph"></span>
               {:else}
-                <span class="tr-sub">{result.artist ?? ""}</span>
+                <TrackCell>{result.artist ?? ""}</TrackCell>
               {/if}
-            </span>
-            <span class="tr-sub hide-sm">
+            </TrackMain>
+            <TrackCell hideSmall>
               {#if result.details_pending}
                 <span class="ph"></span>
               {:else if result.album}
@@ -97,12 +99,12 @@
               {:else if result.views !== null}
                 {formatViews(result.views)}
               {/if}
-            </span>
-            <span class="tr-dur hide-sm">
+            </TrackCell>
+            <TrackCell kind="dur" hideSmall>
               {#if !result.details_pending && result.duration !== null}
                 {formatTime(result.duration)}
               {/if}
-            </span>
+            </TrackCell>
             <span class="actions">
               {#if group.isActive}
                 <AddToGroup
@@ -141,10 +143,6 @@
     font-size: clamp(30px, 4.4vw, 44px) !important;
     line-height: 1.05 !important;
     text-wrap: pretty;
-  }
-  .compact-search .field {
-    width: 100%;
-    border-radius: 999px;
   }
   .status {
     margin: 0;

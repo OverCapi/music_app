@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import EmptyState from "#lib/components/ui/EmptyState.svelte";
 
   /** Glass card holding `TrackRow`s. It is a size container: rows drop their `.hide-sm`
    * cells (album, artist column…) when the card gets narrower than 640 px. */
@@ -7,7 +8,7 @@
 </script>
 
 <div class="glass list" role="table">
-  {#if empty}<div class="empty">{empty}</div>{/if}
+  {#if empty}<EmptyState compact>{empty}</EmptyState>{/if}
   {@render children()}
 </div>
 
@@ -18,10 +19,5 @@
     padding: 8px;
     border-radius: calc(var(--rs) + 8px);
     container: tracks / inline-size;
-  }
-  .empty {
-    padding: 16px 14px;
-    color: var(--mute);
-    font-size: 14px;
   }
 </style>

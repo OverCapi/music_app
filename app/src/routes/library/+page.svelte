@@ -1,4 +1,7 @@
 <script lang="ts">
+  import CardGrid from "#lib/components/ui/CardGrid.svelte";
+  import Field from "#lib/components/ui/Field.svelte";
+  import EmptyState from "#lib/components/ui/EmptyState.svelte";
   import { tick } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -106,8 +109,8 @@
       <span class="meta">{meta}</span>
     </div>
     <div class="tools">
-      <input
-        class="field search"
+      <Field
+        variant="search"
         type="search"
         placeholder="Rechercher…"
         aria-label="Rechercher dans la bibliothèque"
@@ -122,14 +125,14 @@
 
   <div bind:this={body}>
     {#if library.tracks.length === 0}
-      <div class="empty">
+      <EmptyState>
         <p>Ta bibliothèque est vide.</p>
         <p class="muted">Ajoute des fichiers mp3 ou opus pour commencer.</p>
-      </div>
+      </EmptyState>
     {:else if filtered.length === 0}
-      <div class="empty"><p class="muted">Aucun résultat pour « {query} ».</p></div>
+      <EmptyState><p class="muted">Aucun résultat pour « {query} ».</p></EmptyState>
     {:else if tab === "albums"}
-      <div class="grid albums">
+      <CardGrid min={170} gap={20} minSmall={140} gapSmall={14}>
         {#each albums.slice(0, shownAlbums.count) as album (album.key)}
           <MediaCard
             title={album.title}
@@ -139,9 +142,9 @@
             playLabel={`Lire ${album.title}`}
           />
         {/each}
-      </div>
+      </CardGrid>
     {:else if tab === "artists"}
-      <div class="grid artists">
+      <CardGrid min={150} gap={28} minSmall={110} gapSmall={18}>
         {#each artists.slice(0, shownArtists.count) as artist (artist.key)}
           <button
             class="artist"
@@ -156,7 +159,7 @@
             <span class="count">{plural(artist.tracks.length, "titre")}</span>
           </button>
         {/each}
-      </div>
+      </CardGrid>
     {:else}
       <LibraryTracks tracks={filtered} source="library" onplay={(i) => playList(filtered, i)} />
     {/if}
@@ -194,21 +197,6 @@
     gap: 10px;
     max-width: 100%;
   }
-  .search {
-    width: 200px;
-    max-width: 100%;
-  }
-  .grid {
-    display: grid;
-  }
-  .albums {
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-    gap: 20px;
-  }
-  .artists {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 28px;
-  }
   .artist {
     position: relative;
     display: flex;
@@ -242,22 +230,5 @@
     margin-top: -6px;
     color: var(--mute);
     font-size: 12px;
-  }
-  .empty {
-    padding: 3rem 0;
-    text-align: center;
-  }
-  .empty p {
-    margin: 0.3rem 0;
-  }
-  @container page (max-width: 640px) {
-    .albums {
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 14px;
-    }
-    .artists {
-      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-      gap: 18px;
-    }
   }
 </style>

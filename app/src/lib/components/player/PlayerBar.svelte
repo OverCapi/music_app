@@ -4,7 +4,6 @@
    * play · next · repeat, then a 4 px progress bar (hidden for lives). Right: mini equalizer ·
    * like · volume (widens on hover, draggable) · fullscreen.
    * Group / live logic is the same as the current PlayerBar — only the presentation changes. */
-  import { convertFileSrc } from "@tauri-apps/api/core";
   import { player } from "#lib/stores/player.svelte.ts";
   import { library } from "#lib/stores/library.svelte.ts";
   import { lives } from "#lib/stores/lives.svelte.ts";
@@ -12,8 +11,14 @@
   import { feedback } from "#lib/stores/feedback.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { fileName, formatTime } from "#lib/format.ts";
-  import { liquid } from "#lib/motion.ts";
+  import { ticker } from "#lib/clock.svelte.ts";
+  import { localCover, youtubeCover } from "#lib/covers.ts";
+  import Badge from "#lib/components/ui/Badge.svelte";
+  import Disc from "#lib/components/ui/Disc.svelte";
   import Icon from "#lib/components/ui/Icon.svelte";
+  import IconButton from "#lib/components/ui/IconButton.svelte";
+  import PlayButton from "#lib/components/ui/PlayButton.svelte";
+  import RailBar from "#lib/components/ui/RailBar.svelte";
   import Visualizer from "#lib/components/ui/Visualizer.svelte";
 
   const s = $derived(player.state);
@@ -25,19 +30,16 @@
     groupMode ? ["playing", "preparing"].includes(group.playback.status) : s.playing,
   );
 
-  let now = $state(Date.now());
-  $effect(() => {
-    if (!playing) return;
-    const t = setInterval(() => (now = Date.now()), 250);
-    return () => clearInterval(t);
-  });
+  const clock = ticker(() => playing);
 
   const duration = $derived(
     groupMode && !(s.group_mode && s.loaded) ? (entry?.duration ?? 0) : player.duration,
   );
   const position = $derived(
     Math.min(
-      groupMode && !(s.group_mode && s.loaded) ? group.positionAt(now) : player.positionAt(now),
+      groupMode && !(s.group_mode && s.loaded)
+        ? group.positionAt(clock.now)
+        : player.positionAt(clock.now),
       duration || Infinity,
     ),
   );
@@ -53,38 +55,18 @@
   );
   const cover = $derived(
     groupMode
-      ? entry && `https://i.ytimg.com/vi/${entry.youtube_id}/mqdefault.jpg`
+      ? entry && youtubeCover(entry.youtube_id)
       : live
         ? live.thumbnail
         : s.track_id !== null
-          ? convertFileSrc(String(s.track_id), "cover")
+          ? localCover(s.track_id)
           : undefined,
   );
   const ytId = $derived(groupMode ? entry?.youtube_id : track?.youtube_id);
   const liked = $derived(!!ytId && feedback.trackKind(ytId) === "like");
 
-  let volDragging = $state(false);
-  function volume(e: PointerEvent) {
-    const el = e.currentTarget as HTMLElement;
-    const set = (x: number) => {
-      const r = el.getBoundingClientRect();
-      player.setVolume(Math.max(0, Math.min(1, (x - r.left) / r.width)));
-    };
-    volDragging = true;
-    set(e.clientX);
-    const move = (ev: PointerEvent) => set(ev.clientX);
-    const up = () => (
-      removeEventListener("pointermove", move),
-      removeEventListener("pointerup", up),
-      (volDragging = false)
-    );
-    addEventListener("pointermove", move);
-    addEventListener("pointerup", up);
-  }
-
-  function seek(e: MouseEvent) {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const secs = ((e.clientX - r.left) / r.width) * duration;
+  function seek(fraction: number) {
+    const secs = fraction * duration;
     return groupMode ? group.seek(secs) : player.seek(secs);
   }
 </script>
@@ -92,15 +74,12 @@
 <div class="wrap" style:left="{ui.left}px" style:right="{ui.right}px">
   <footer class="dock glass" class:compact={ui.compact}>
     <button class="now" onclick={() => (live ? lives.expandVideo() : (ui.fullscreen = true))}>
-      <span class="disc" class:spinning={playing}>
-        {#key cover}{#if cover}<img class="swap" src={cover} alt="" />{/if}{/key}
-        <span class="hole"></span>
-      </span>
+      <Disc src={cover} spinning={playing} />
       <span class="meta">
         <span class="line">
           <span class="title">{title}</span>
-          {#if live}<span class="badge-live">DIRECT</span>{/if}
-          {#if groupMode}<span class="badge-group">GROUPE</span>{/if}
+          {#if live}<Badge size="sm">DIRECT</Badge>{/if}
+          {#if groupMode}<Badge variant="group" size="sm">GROUPE</Badge>{/if}
         </span>
         <span class="artist">{artist ?? "Artiste inconnu"}</span>
       </span>
@@ -109,67 +88,57 @@
     <div class="center">
       <div class="controls">
         {#if !groupMode}
-          <button
-            class="halo-btn sm"
-            class:active={s.shuffle}
-            use:liquid
+          <IconButton
+            class="sm"
+            icon="shuffle"
+            label="Lecture aléatoire"
+            size={34}
+            iconSize={16}
+            active={s.shuffle}
             onclick={() => player.toggleShuffle()}
-            aria-label="Lecture aléatoire"><Icon name="shuffle" size={16} /></button
-          >
+          />
         {/if}
-        <button
-          class="halo-btn"
-          use:liquid
+        <IconButton
+          icon="previous"
+          label="Précédent"
           onclick={() => (groupMode ? group.seek(0) : player.previous())}
-          aria-label="Précédent"><Icon name="previous" size={18} /></button
-        >
-        <button
-          class="play-btn"
-          style="width:42px;height:42px"
-          use:liquid
+        />
+        <PlayButton
+          size={42}
+          label={playing ? "Pause" : "Lecture"}
+          {playing}
           onclick={() => (groupMode ? group.togglePlay() : player.togglePlay())}
-          aria-label={playing ? "Pause" : "Lecture"}
-        >
-          <span class="swap-ico" class:on={playing}><Icon name="pause" size={18} /></span>
-          <span class="swap-ico" class:on={!playing}><Icon name="play" size={18} /></span>
-        </button>
-        <button
-          class="halo-btn"
-          use:liquid
+        />
+        <IconButton
+          icon="next"
+          label="Suivant"
           onclick={() => (groupMode ? group.skip() : player.next())}
-          aria-label="Suivant"><Icon name="next" size={18} /></button
-        >
+        />
         {#if !groupMode}
-          <button
-            class="halo-btn sm"
-            class:active={s.repeat !== "off"}
-            use:liquid
+          <IconButton
+            class="sm"
+            icon={s.repeat === "one" ? "repeatOne" : "repeat"}
+            label="Répéter"
+            size={34}
+            iconSize={16}
+            active={s.repeat !== "off"}
             onclick={() => player.cycleRepeat()}
-            aria-label="Répéter"
-            ><Icon name={s.repeat === "one" ? "repeatOne" : "repeat"} size={16} /></button
-          >
+          />
         {/if}
         {#if ui.compact}
-          <button
-            class="halo-btn"
-            use:liquid
+          <IconButton
+            icon="queue"
+            label="File d'attente"
             onclick={() => {
               ui.sideOpen = false;
               ui.queueOpen = true;
             }}
-            aria-label="File d'attente"><Icon name="queue" size={18} /></button
-          >
+          />
         {/if}
       </div>
       <div class="progress mono" class:hidden={!!live}>
         <span class="time r">{formatTime(position)}</span>
-        <button class="track" onclick={seek} aria-label="Position">
-          <span class="rail"
-            ><span class="fill" style:width="{duration ? (position / duration) * 100 : 0}%"
-              ><span class="knob"></span></span
-            ></span
-          >
-        </button>
+        <RailBar value={duration ? position / duration : 0} label="Position" knob onvalue={seek} />
         <span class="time">{formatTime(duration)}</span>
       </div>
     </div>
@@ -185,34 +154,33 @@
         /></span
       >
       {#if ytId}
-        <button
-          class="halo-btn sm"
-          class:active={liked}
-          use:liquid
+        <IconButton
+          class="sm"
+          icon={liked ? "heartFilled" : "heart"}
+          label="J'aime"
+          size={34}
+          active={liked}
           onclick={() => feedback.toggleLike({ youtube_id: ytId, title: title ?? "" })}
-          aria-label="J'aime"
-        >
-          <Icon name={liked ? "heartFilled" : "heart"} size={18} />
-        </button>
+        />
       {/if}
       {#if ui.showVolume}
         <Icon name="volume" size={16} />
-        <button class="vol" onpointerdown={volume} aria-label="Volume">
-          <span class="rail"
-            ><span
-              class="fill vfill"
-              class:dragging={volDragging}
-              style:width="{player.volume * 100}%"
-            ></span></span
-          >
-        </button>
+        <RailBar
+          variant="volume"
+          dock
+          value={player.volume}
+          label="Volume"
+          onvalue={(f) => player.setVolume(f)}
+        />
       {/if}
-      <button
-        class="halo-btn sm"
-        use:liquid
+      <IconButton
+        class="sm"
+        icon="expand"
+        label="Plein écran"
+        size={34}
+        iconSize={16}
         onclick={() => (live ? lives.expandVideo() : (ui.fullscreen = true))}
-        aria-label="Plein écran"><Icon name="expand" size={16} /></button
-      >
+      />
     </div>
   </footer>
 </div>
@@ -277,53 +245,6 @@
     background: none;
     text-align: left;
   }
-  .disc {
-    position: relative;
-    flex: none;
-    width: 52px;
-    height: 52px;
-    overflow: hidden;
-    border-radius: 50%;
-    background: var(--line);
-    box-shadow: 0 8px 20px -6px var(--shadow);
-    animation: spin 9s linear infinite paused;
-  }
-  .disc.spinning {
-    animation-play-state: running;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  .disc img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .hole {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 12px;
-    height: 12px;
-    margin: -6px 0 0 -6px;
-    border-radius: 50%;
-    background: var(--bg);
-    box-shadow: inset 0 0 0 1px var(--border);
-  }
-  .swap {
-    animation: swapin 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-  @keyframes swapin {
-    from {
-      opacity: 0.3;
-      transform: scale(1.1);
-      filter: blur(10px);
-    }
-  }
   .meta {
     display: flex;
     flex-direction: column;
@@ -350,21 +271,6 @@
     color: var(--mute);
     font-size: 12px;
   }
-  .badge-live {
-    flex: none;
-    font-size: 9px;
-    padding: 2px 7px;
-  }
-  .badge-group {
-    flex: none;
-    padding: 2px 7px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--glass2);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-  }
   .center {
     display: flex;
     flex-direction: column;
@@ -375,23 +281,6 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-  }
-  .halo-btn.sm {
-    width: 34px;
-    height: 34px;
-  }
-  .swap-ico {
-    grid-area: 1 / 1;
-    display: grid;
-    opacity: 0;
-    transform: scale(0.5) rotate(-30deg);
-    transition:
-      opacity 0.25s,
-      transform 0.35s var(--ease-spring);
-  }
-  .swap-ico.on {
-    opacity: 1;
-    transform: none;
   }
   .progress {
     display: flex;
@@ -415,38 +304,6 @@
   .time.r {
     text-align: right;
   }
-  .track {
-    flex: 1;
-    height: 14px;
-    padding: 0;
-    background: none;
-  }
-  .rail {
-    position: relative;
-    display: block;
-    height: 4px;
-    border-radius: 4px;
-    background: var(--line);
-  }
-  .fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: 6px;
-    background: var(--accent);
-    box-shadow: 0 0 14px var(--accent);
-    transition: width 0.3s linear;
-  }
-  .knob {
-    position: absolute;
-    right: -6px;
-    top: 50%;
-    width: 12px;
-    height: 12px;
-    margin-top: -6px;
-    border-radius: 50%;
-    background: var(--fg);
-    box-shadow: 0 2px 8px var(--shadow);
-  }
   .end {
     display: flex;
     align-items: center;
@@ -457,31 +314,5 @@
     width: 21px;
     height: 18px;
     margin-right: 4px;
-  }
-  .vol {
-    width: 84px;
-    height: 16px;
-    padding: 6px 0;
-    box-sizing: border-box;
-    background: none;
-    touch-action: none;
-    transition:
-      width 0.35s var(--ease-out),
-      padding 0.3s var(--ease-out);
-  }
-  .vol:hover {
-    width: 108px;
-    padding: 4px 0;
-  }
-  .vol .rail {
-    height: 100%;
-  }
-  .vfill {
-    background: var(--fg);
-    box-shadow: none;
-    transition: width 0.35s var(--ease-out);
-  }
-  .vfill.dragging {
-    transition: width 0.07s linear;
   }
 </style>

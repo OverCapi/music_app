@@ -5,21 +5,24 @@
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
-  import { convertFileSrc } from "@tauri-apps/api/core";
   import type { Playlist } from "#lib/bindings.ts";
   import { playlists } from "#lib/stores/playlists.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { progressive } from "#lib/progressive.svelte.ts";
+  import { localCover } from "#lib/covers.ts";
   import { flip, liquid } from "#lib/motion.ts";
+  import { ReorderGuard } from "#lib/reorder.ts";
   import { plural } from "#lib/format.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
+  import PanelHeader from "#lib/components/ui/PanelHeader.svelte";
+  import SectionLabel from "#lib/components/ui/SectionLabel.svelte";
 
   type Entry = { id: number; pinned: boolean };
 
   let list = $state<HTMLElement>();
   let order = $state<Entry[]>([]);
   let dragging = $state<number | null>(null);
-  let lock = 0;
+  const guard = new ReorderGuard();
 
   // Local order mirrors the store until a drag commits it.
   $effect(() => {
@@ -45,26 +48,24 @@
     const [entry] = next.splice(from, 1);
     next.splice(to, 0, { ...entry, pinned: pin });
     order = next;
-    lock = performance.now() + 90;
+    guard.arm();
     await tick();
     done();
   }
 
   function over(e: DragEvent, id: number) {
     e.preventDefault();
-    if (dragging === null || dragging === id || performance.now() < lock) return;
+    if (dragging === null || dragging === id) return;
     const from = order.findIndex((x) => x.id === dragging);
     const to = order.findIndex((x) => x.id === id);
-    // Only swap once the pointer crosses the target's middle (no jitter).
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    if (from < to ? e.clientY < r.top + r.height / 2 : e.clientY > r.top + r.height / 2) return;
+    if (!guard.shouldSwap(e, from, to)) return;
     return move(to, order[to].pinned);
   }
 
   /** Dropping on a section title (also lets an empty section receive an item). */
   function overTitle(e: DragEvent, pin: boolean) {
     e.preventDefault();
-    if (dragging === null || performance.now() < lock) return;
+    if (dragging === null || guard.locked) return;
     const cur = order.find((x) => x.id === dragging);
     if (!cur || cur.pinned === pin) return;
     // Index just after the pinned entries (dragged one excluded): end of "Épinglées" or
@@ -99,18 +100,13 @@
   class:closed={ui.compact && !ui.sideOpen}
   style:width="{ui.sideWidth}px"
 >
-  <header class:collapsed={!ui.sideExpanded}>
-    <span class="fade title" class:on={ui.sideExpanded}>Playlists</span>
-    <button
-      class="halo-btn chev"
-      class:flipped={!ui.sideExpanded}
-      use:liquid
-      onclick={() => (ui.sideOpen = !ui.sideOpen)}
-      aria-label={ui.sideOpen ? "Replier" : "Déplier"}
-    >
-      <Icon name="chevronLeft" size={16} />
-    </button>
-  </header>
+  <PanelHeader
+    title="Playlists"
+    expanded={ui.sideExpanded}
+    open={ui.sideOpen}
+    icon="chevronLeft"
+    ontoggle={() => (ui.sideOpen = !ui.sideOpen)}
+  />
 
   <button class="row item new" use:liquid onclick={create}>
     <span class="tile dashed"><Icon name="plus" size={16} /></span>
@@ -118,23 +114,23 @@
   </button>
 
   <div class="list" bind:this={list}>
-    <div
-      class="section-title fade"
-      class:on={ui.sideExpanded}
+    <SectionLabel
+      inset
+      class="fade {ui.sideExpanded ? 'on' : ''}"
       role="presentation"
-      ondragover={(e) => overTitle(e, true)}
+      ondragover={(e: DragEvent) => overTitle(e, true)}
     >
       Épinglées
-    </div>
+    </SectionLabel>
     {#each pinned as p (p.id)}{@render item(p)}{/each}
-    <div
-      class="section-title fade"
-      class:on={ui.sideExpanded}
+    <SectionLabel
+      inset
+      class="fade {ui.sideExpanded ? 'on' : ''}"
       role="presentation"
-      ondragover={(e) => overTitle(e, false)}
+      ondragover={(e: DragEvent) => overTitle(e, false)}
     >
       Toutes
-    </div>
+    </SectionLabel>
     {#each others.slice(0, shownOthers.count) as p (p.id)}{@render item(p)}{/each}
   </div>
 </aside>
@@ -159,11 +155,8 @@
     <span class="hl" class:on={page.url.pathname === href || dragging === p.id}></span>
     <span class="tile mosaic">
       {#each covers(p) as id, i (i)}
-        {#if id !== undefined}<img
-            src={convertFileSrc(String(id), "cover")}
-            alt=""
-            loading="lazy"
-          />{:else}<span></span>{/if}
+        {#if id !== undefined}<img src={localCover(id)} alt="" loading="lazy" />{:else}<span
+          ></span>{/if}
       {/each}
     </span>
     <span class="meta fade" class:on={ui.sideExpanded}>
@@ -197,34 +190,6 @@
     pointer-events: none;
     transform: translateX(calc(-100% - 24px));
   }
-  header {
-    display: flex;
-    flex: none;
-    align-items: center;
-    padding: 14px 14px 8px;
-    transition: padding 0.55s var(--ease-out);
-  }
-  /* Collapsed panel is 66 px wide: the 36 px button sits exactly in the middle. */
-  header.collapsed {
-    padding-inline: 15px;
-  }
-  header.collapsed .title {
-    flex: 0 0 0;
-    padding: 0;
-  }
-  .title {
-    flex: 1;
-    padding-left: 4px;
-    color: var(--mute);
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .chev :global(svg) {
-    transition: transform 0.5s;
-  }
-  .chev.flipped :global(svg) {
-    transform: rotate(180deg);
-  }
   .list {
     flex: 1;
     min-height: 0;
@@ -233,11 +198,6 @@
     flex-direction: column;
     gap: 2px;
     padding: 0 8px 12px;
-  }
-  .section-title {
-    flex: none;
-    padding: 12px 8px 6px;
-    white-space: nowrap;
   }
   .item {
     flex: none;
@@ -289,17 +249,6 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-  }
-  .fade {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    opacity: 0;
-    transition: opacity 0.15s;
-  }
-  .fade.on {
-    opacity: 1;
-    transition: opacity 0.35s 0.12s;
   }
   .meta {
     position: relative;

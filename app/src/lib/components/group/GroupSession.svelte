@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SectionLabel from "#lib/components/ui/SectionLabel.svelte";
   import { onDestroy } from "svelte";
   import type { GroupView } from "#lib/bindings.ts";
   import { group } from "#lib/stores/group.svelte.ts";
@@ -50,7 +51,7 @@
 
 <Panel radius={14} pad={24} class="top">
   <div class="code-block">
-    <span class="section-title">Code du groupe</span>
+    <SectionLabel>Code du groupe</SectionLabel>
     <div class="code-line">
       <span class="code">{view.code}</span>
       <Button size={36} onclick={copyLink} title={view.link} class="copy">
@@ -72,7 +73,7 @@
 </Panel>
 
 <section>
-  <span class="section-title">Membres · {view.state.members.length}</span>
+  <SectionLabel>Membres · {view.state.members.length}</SectionLabel>
   <div class="members">
     {#each view.state.members as member (member.username)}
       <MemberChip
@@ -86,7 +87,7 @@
 
 <section>
   <div class="queue-header">
-    <span class="section-title">File du groupe</span>
+    <SectionLabel>File du groupe</SectionLabel>
     <span class="status">{status}</span>
   </div>
   <GroupQueue {view} />

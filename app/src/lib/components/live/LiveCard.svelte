@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Badge from "#lib/components/ui/Badge.svelte";
   import type { LiveStream } from "#lib/bindings.ts";
   import Card from "#lib/components/ui/Card.svelte";
 
@@ -14,7 +15,7 @@
 <Card onclick={onplay} class={playing ? "playing" : ""}>
   <span class="thumb">
     <img src={stream.thumbnail} alt="" loading="lazy" />
-    <span class="badge-live">EN DIRECT</span>
+    <Badge style="position:absolute;top:8px;left:8px">EN DIRECT</Badge>
   </span>
   <span class="text">
     <span class="title">{stream.title}</span>
@@ -38,11 +39,6 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-  }
-  .badge-live {
-    position: absolute;
-    top: 8px;
-    left: 8px;
   }
   .text {
     display: flex;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CardGrid from "#lib/components/ui/CardGrid.svelte";
   import { onMount } from "svelte";
   import { resolve } from "$app/paths";
   import type { MixCategory } from "#lib/bindings.ts";
@@ -114,7 +115,7 @@
     {:else}
       {#each groups as group (group.id)}
         <Section label={group.label}>
-          <div class="grid">
+          <CardGrid>
             {#each group.mixes as mix (mix.id)}
               <MediaCard
                 title={mix.title}
@@ -126,7 +127,7 @@
                 onplay={() => home.playAll(mix.tracks)}
               />
             {/each}
-          </div>
+          </CardGrid>
         </Section>
       {/each}
     {/if}
@@ -161,7 +162,7 @@
     {#if playable.length === 0}
       <p class="status">Rien d'écouté pour l'instant.</p>
     {:else}
-      <div class="recent">
+      <CardGrid min={240} gap={10}>
         {#each playable as track, i (track.youtube_id)}
           <MiniCard
             cover={youtubeCover(track.youtube_id)}
@@ -170,7 +171,7 @@
             onclick={() => home.play(playable, i)}
           />
         {/each}
-      </div>
+      </CardGrid>
     {/if}
   </Section>
 </div>
@@ -196,16 +197,6 @@
     margin: 0;
     color: var(--mute);
     font-size: 14px;
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-    gap: 18px;
-  }
-  .recent {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 10px;
   }
 
   /* Reprendre */

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import SectionLabel from "#lib/components/ui/SectionLabel.svelte";
 
   /** Page section: `h2` title (with optional trailing actions) and an optional small
    * uppercase label above the content (e.g. "Que du connu"). */
@@ -18,7 +19,7 @@
       {@render actions?.()}
     </div>
   {/if}
-  {#if label}<div class="section-title">{label}</div>{/if}
+  {#if label}<SectionLabel>{label}</SectionLabel>{/if}
   {@render children()}
 </section>
 

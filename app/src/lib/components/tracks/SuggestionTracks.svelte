@@ -4,6 +4,8 @@
   import { formatTime } from "#lib/format.ts";
   import { youtubeCover } from "#lib/covers.ts";
   import TrackList from "#lib/components/ui/TrackList.svelte";
+  import TrackCell from "#lib/components/ui/TrackCell.svelte";
+  import TrackMain from "#lib/components/ui/TrackMain.svelte";
   import TrackRow from "#lib/components/ui/TrackRow.svelte";
 
   /** Rows for YouTube suggestions (mixes, discoveries): played on click, downloaded on play. */
@@ -31,12 +33,9 @@
       colsSmall="minmax(0,1fr) 48px"
       onplay={() => onplay(i)}
     >
-      <span class="tr-main">
-        <span class="tr-title">{track.title}</span>
-        <span class="tr-sub">{track.artist ?? "Artiste inconnu"}</span>
-      </span>
-      <span class="tr-sub hide-sm">{showKnown && track.known ? "Déjà connu" : ""}</span>
-      <span class="tr-dur">{track.duration ? formatTime(track.duration) : ""}</span>
+      <TrackMain title={track.title} subtitle={track.artist ?? "Artiste inconnu"} />
+      <TrackCell hideSmall>{showKnown && track.known ? "Déjà connu" : ""}</TrackCell>
+      <TrackCell kind="dur">{track.duration ? formatTime(track.duration) : ""}</TrackCell>
     </TrackRow>
   {/each}
 </TrackList>

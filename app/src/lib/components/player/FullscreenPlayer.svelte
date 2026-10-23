@@ -3,12 +3,15 @@
    * breathes 2.2 s while playing), title + like + progress + transport right,
    * 48 mirrored visualizer bars along the bottom that rise in a wave on open. */
   import { onMount } from "svelte";
-  import { convertFileSrc } from "@tauri-apps/api/core";
   import { player } from "#lib/stores/player.svelte.ts";
   import { library } from "#lib/stores/library.svelte.ts";
   import { formatTime } from "#lib/format.ts";
-  import { liquid } from "#lib/motion.ts";
+  import { ticker } from "#lib/clock.svelte.ts";
+  import { localCover } from "#lib/covers.ts";
   import Icon from "#lib/components/ui/Icon.svelte";
+  import IconButton from "#lib/components/ui/IconButton.svelte";
+  import PlayButton from "#lib/components/ui/PlayButton.svelte";
+  import RailBar from "#lib/components/ui/RailBar.svelte";
   import Visualizer from "#lib/components/ui/Visualizer.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -16,17 +19,10 @@
 
   const s = $derived(player.state);
   const track = $derived(s.track_id !== null ? library.byId.get(s.track_id) : undefined);
-  const cover = $derived(
-    s.track_id !== null ? convertFileSrc(String(s.track_id), "cover") : undefined,
-  );
+  const cover = $derived(s.track_id !== null ? localCover(s.track_id) : undefined);
 
-  let now = $state(Date.now());
-  $effect(() => {
-    if (!s.playing) return;
-    const t = setInterval(() => (now = Date.now()), 250);
-    return () => clearInterval(t);
-  });
-  const pos = $derived(Math.min(player.positionAt(now), player.duration || Infinity));
+  const clock = ticker(() => s.playing);
+  const pos = $derived(Math.min(player.positionAt(clock.now), player.duration || Infinity));
 
   onMount(() => {
     root!.animate(
@@ -72,25 +68,7 @@
     ).onfinish = onclose;
   }
 
-  function volume(e: PointerEvent) {
-    const el = e.currentTarget as HTMLElement;
-    const set = (x: number) => {
-      const r = el.getBoundingClientRect();
-      player.setVolume(Math.max(0, Math.min(1, (x - r.left) / r.width)));
-    };
-    set(e.clientX);
-    const move = (ev: PointerEvent) => set(ev.clientX);
-    const up = () => (
-      removeEventListener("pointermove", move),
-      removeEventListener("pointerup", up)
-    );
-    addEventListener("pointermove", move);
-    addEventListener("pointerup", up);
-  }
-  function seek(e: MouseEvent) {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    player.seek(((e.clientX - r.left) / r.width) * player.duration);
-  }
+  const seek = (fraction: number) => player.seek(fraction * player.duration);
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && close()} />
@@ -106,9 +84,14 @@
       intro
     />
   </div>
-  <button class="halo-btn back glass" use:liquid onclick={close} aria-label="Fermer"
-    ><Icon name="chevronDown" size={20} /></button
-  >
+  <IconButton
+    class="back glass"
+    icon="chevronDown"
+    label="Fermer"
+    size={44}
+    iconSize={20}
+    onclick={close}
+  />
   <div class="grid">
     <div class="art-wrap">
       {#if cover}<img class="glow" src={cover} alt="" />{/if}
@@ -119,50 +102,61 @@
     <div class="side">
       <div class="title">{track?.title ?? ""}</div>
       <div class="muted sub">{track?.artist ?? ""} · {track?.album ?? ""}</div>
-      <button class="bar" onclick={seek} aria-label="Position">
-        <span class="rail"
-          ><span class="fill" style:width="{player.duration ? (pos / player.duration) * 100 : 0}%"
-          ></span></span
-        >
-      </button>
+      <RailBar
+        value={player.duration ? pos / player.duration : 0}
+        label="Position"
+        thickness={6}
+        onvalue={seek}
+      />
       <div class="times mono muted">
         <span>{formatTime(pos)}</span><span>{formatTime(player.duration)}</span>
       </div>
       <div class="controls">
-        <button
-          class="halo-btn"
-          class:active={s.shuffle}
-          use:liquid
-          onclick={() => player.toggleShuffle()}><Icon name="shuffle" size={20} /></button
-        >
-        <button class="halo-btn big" use:liquid onclick={() => player.previous()}
-          ><Icon name="previous" size={28} /></button
-        >
-        <button
-          class="play-btn"
-          style="width:84px;height:84px"
-          use:liquid
+        <IconButton
+          icon="shuffle"
+          label="Lecture aléatoire"
+          size={44}
+          iconSize={20}
+          active={s.shuffle}
+          onclick={() => player.toggleShuffle()}
+        />
+        <IconButton
+          icon="previous"
+          label="Précédent"
+          size={56}
+          iconSize={28}
+          onclick={() => player.previous()}
+        />
+        <PlayButton
+          size={84}
+          label={s.playing ? "Pause" : "Lecture"}
+          playing={s.playing}
           onclick={() => player.togglePlay()}
-          ><Icon name={s.playing ? "pause" : "play"} size={34} /></button
-        >
-        <button class="halo-btn big" use:liquid onclick={() => player.next()}
-          ><Icon name="next" size={28} /></button
-        >
-        <button
-          class="halo-btn"
-          class:active={s.repeat !== "off"}
-          use:liquid
+        />
+        <IconButton
+          icon="next"
+          label="Suivant"
+          size={56}
+          iconSize={28}
+          onclick={() => player.next()}
+        />
+        <IconButton
+          icon={s.repeat === "one" ? "repeatOne" : "repeat"}
+          label="Répéter"
+          size={44}
+          iconSize={20}
+          active={s.repeat !== "off"}
           onclick={() => player.cycleRepeat()}
-          ><Icon name={s.repeat === "one" ? "repeatOne" : "repeat"} size={20} /></button
-        >
+        />
       </div>
       <div class="volume">
         <Icon name="volume" size={18} />
-        <button class="vol" onpointerdown={volume} aria-label="Volume">
-          <span class="rail"
-            ><span class="fill vfill" style:width="{player.volume * 100}%"></span></span
-          >
-        </button>
+        <RailBar
+          variant="volume"
+          value={player.volume}
+          label="Volume"
+          onvalue={(f) => player.setVolume(f)}
+        />
       </div>
     </div>
   </div>
@@ -187,7 +181,7 @@
     opacity: 0.5;
     pointer-events: none;
   }
-  .back {
+  .full :global(.back) {
     position: absolute;
     z-index: 2;
     top: 22px;
@@ -261,26 +255,6 @@
     margin-bottom: 20px;
     font-size: 17px;
   }
-  .bar {
-    height: 18px;
-    padding: 0;
-    background: none;
-  }
-  .rail {
-    position: relative;
-    display: block;
-    height: 6px;
-    border-radius: 6px;
-    background: var(--line);
-  }
-  .fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: 6px;
-    background: var(--accent);
-    box-shadow: 0 0 14px var(--accent);
-    transition: width 0.3s linear;
-  }
   .times {
     display: flex;
     justify-content: space-between;
@@ -297,25 +271,6 @@
     align-items: center;
     gap: 12px;
     margin-top: 20px;
-  }
-  .vol {
-    flex: 1;
-    height: 18px;
-    padding: 6px 0;
-    box-sizing: border-box;
-    background: none;
-    touch-action: none;
-  }
-  .vol .rail {
-    height: 100%;
-  }
-  .vfill {
-    background: var(--fg);
-    box-shadow: none;
-  }
-  .halo-btn {
-    width: 44px;
-    height: 44px;
   }
   @media (max-width: 900px) {
     .viz {
@@ -346,9 +301,5 @@
       margin-bottom: 8px;
       font-size: 15px;
     }
-  }
-  .halo-btn.big {
-    width: 56px;
-    height: 56px;
   }
 </style>

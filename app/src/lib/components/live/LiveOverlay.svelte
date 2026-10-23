@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Badge from "#lib/components/ui/Badge.svelte";
   /** Fullscreen live video. Grows from the Lives page panel (`lives.videoFrom`) and shrinks
    * back on close. Closes by itself when the live ends. */
   import { onMount } from "svelte";
@@ -50,7 +51,7 @@
     <IconButton icon="chevronDown" label="Réduire" size={44} iconSize={20} onclick={close} />
   </div>
   <div class="info">
-    <span class="badge-live">EN DIRECT</span>
+    <Badge>EN DIRECT</Badge>
     <span class="title">{live?.title ?? ""}</span>
   </div>
 </div>

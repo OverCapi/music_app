@@ -1,8 +1,9 @@
 <script lang="ts">
+  import Field from "#lib/components/ui/Field.svelte";
+  import IconBadge from "#lib/components/ui/IconBadge.svelte";
   import { account } from "#lib/stores/account.svelte.ts";
   import { group } from "#lib/stores/group.svelte.ts";
   import Button from "#lib/components/ui/Button.svelte";
-  import Icon from "#lib/components/ui/Icon.svelte";
   import Panel from "#lib/components/ui/Panel.svelte";
 
   let invite = $state("");
@@ -22,18 +23,18 @@
 
 <div class="cards">
   <Panel radius={14} pad={28} class="card-lobby">
-    <span class="badge"><Icon name="plus" size={22} /></span>
+    <IconBadge icon="plus" />
     <h2>Créer un groupe</h2>
     <Button variant="primary" onclick={() => group.create()} disabled={group.busy}>Créer</Button>
   </Panel>
 
   <form {onsubmit}>
     <Panel radius={14} pad={28} class="card-lobby">
-      <span class="badge"><Icon name="copy" size={20} /></span>
+      <IconBadge icon="copy" />
       <h2>Rejoindre</h2>
       <div class="join">
-        <input
-          class="field code"
+        <Field
+          variant="code"
           bind:value={invite}
           placeholder="Code ou lien"
           spellcheck="false"
@@ -81,15 +82,6 @@
     margin: 0;
     font-size: 22px !important;
   }
-  .badge {
-    display: grid;
-    place-items: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--line);
-    color: var(--accent);
-  }
   form {
     display: contents;
   }
@@ -97,16 +89,5 @@
     display: flex;
     gap: 10px;
     width: 100%;
-  }
-  .code {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--mono);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  .code::placeholder {
-    text-transform: none;
-    letter-spacing: normal;
   }
 </style>

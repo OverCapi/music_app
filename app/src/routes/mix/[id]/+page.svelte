@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from "#lib/components/ui/EmptyState.svelte";
   import { onMount } from "svelte";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
@@ -35,10 +36,10 @@
   {:else if !home.mixesLoaded || home.loadingMixes}
     <p class="muted">Préparation du mix…</p>
   {:else}
-    <div class="empty">
+    <EmptyState>
       <p>Ce mix n'existe plus : les mix sont recréés à chaque session.</p>
-      <p><a class="link" href={resolve("/")}>Retour à l'accueil</a></p>
-    </div>
+      <p><a href={resolve("/")}>Retour à l'accueil</a></p>
+    </EmptyState>
   {/if}
 </div>
 
@@ -47,13 +48,5 @@
     display: flex;
     flex-direction: column;
     gap: 32px;
-  }
-  .empty {
-    padding: 3rem 0;
-    text-align: center;
-  }
-  .link {
-    color: var(--accent);
-    font-weight: 600;
   }
 </style>
