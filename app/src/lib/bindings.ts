@@ -128,6 +128,15 @@ export const commands = {
 	addFavoriteChannel: (channel: LiveChannel) => __TAURI_INVOKE<LiveChannel[]>("add_favorite_channel", { channel }),
 	/**  Returns the updated list. */
 	removeFavoriteChannel: (id: string) => __TAURI_INVOKE<LiveChannel[]>("remove_favorite_channel", { id }),
+	getLanState: () => __TAURI_INVOKE<LanState>("get_lan_state"),
+	setDeviceName: (name: string) => __TAURI_INVOKE<string>("set_device_name", { name }),
+	/**
+	 *  Asks a device of the network for a sync. Returns whether its user accepted;
+	 *  progress and the outcome come as `LanProgress` / `LanDone` events.
+	 */
+	lanRequestSync: (peerId: string, direction: Direction, mirror: boolean) => __TAURI_INVOKE<boolean>("lan_request_sync", { peerId, direction, mirror }),
+	/**  Answers the sync request shown to the user. */
+	lanAnswer: (accept: boolean) => __TAURI_INVOKE<void>("lan_answer", { accept }),
 };
 
 /** Events */
@@ -137,6 +146,10 @@ export const events = {
 	feedbackChanged: makeEvent<FeedbackChanged>("feedback-changed"),
 	groupChanged: makeEvent<GroupChanged>("group-changed"),
 	groupError: makeEvent<GroupError>("group-error"),
+	lanDone: makeEvent<LanDone>("lan-done"),
+	lanPeers: makeEvent<LanPeers>("lan-peers"),
+	lanProgress: makeEvent<LanProgress>("lan-progress"),
+	lanRequest: makeEvent<LanRequest>("lan-request"),
 	libraryChanged: makeEvent<LibraryChanged>("library-changed"),
 	playerChanged: makeEvent<PlayerChanged>("player-changed"),
 	playlistsChanged: makeEvent<PlaylistsChanged>("playlists-changed"),
@@ -171,6 +184,13 @@ export type ArtistFeedback = {
 
 /**  Spectrum of the audio being played (levels 0..=1), pushed ~30 times a second while playing. */
 export type AudioLevels = (number | null)[];
+
+/**  Who sends and who receives, from the requesting device's point of view. */
+export type Direction = 
+/**  The requester sends its library to the other device. */
+"send" | 
+/**  The requester gets the other device's library. */
+"receive" | "both";
 
 export type Discovery = {
 	/**  Unix timestamp (seconds) of the start of the week the tracks belong to. */
@@ -236,6 +256,54 @@ export type GroupView = {
 	downloads: { [key in string]: TrackDownload },
 };
 
+/**  A sync request waiting for the user's answer. */
+export type IncomingRequest = {
+	name: string,
+	direction: Direction,
+	mirror: boolean,
+};
+
+export type LanDone = {
+	/**  Name of the other device. */
+	device: string,
+	report: LanReport | null,
+	error: string | null,
+};
+
+export type LanPeers = {
+	peers: Peer[],
+};
+
+export type LanProgress = {
+	step: string,
+	done: number,
+	total: number,
+};
+
+export type LanReport = {
+	/**  Tracks that were not in the library before. */
+	new_tracks: number,
+	/**  Audio files copied from the other device. */
+	files: number,
+	playlists: number,
+	/**  Tracks of the other device that cannot be played here (no YouTube id, no file). */
+	skipped: number,
+	removed_tracks: number,
+	removed_playlists: number,
+	errors: string[],
+};
+
+/**  A request to answer, or `None` when it is over (answered, timed out, cancelled). */
+export type LanRequest = {
+	request: IncomingRequest | null,
+};
+
+export type LanState = {
+	device_name: string,
+	peers: Peer[],
+	incoming: IncomingRequest | null,
+};
+
 export type LibraryChanged = {
 	tracks: Track[],
 };
@@ -285,6 +353,13 @@ export type MixTrack = {
 	duration: number | null,
 	/**  In the library, already played or liked. */
 	known: boolean,
+};
+
+export type Peer = {
+	id: string,
+	name: string,
+	addr: string,
+	port: number,
 };
 
 /**  A recorded listen. */

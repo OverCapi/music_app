@@ -11,6 +11,7 @@
   import { group } from "#lib/stores/group.svelte.ts";
   import { feedback } from "#lib/stores/feedback.svelte.ts";
   import { sync } from "#lib/stores/sync.svelte.ts";
+  import { lan } from "#lib/stores/lan.svelte.ts";
   import { storage } from "#lib/stores/storage.svelte.ts";
   import { lives } from "#lib/stores/lives.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
@@ -22,6 +23,7 @@
   import QueueView from "#lib/components/player/QueueView.svelte";
   import FullscreenPlayer from "#lib/components/player/FullscreenPlayer.svelte";
   import LiveOverlay from "#lib/components/live/LiveOverlay.svelte";
+  import LanRequestDialog from "#lib/components/lan/LanRequestDialog.svelte";
   import Toasts from "#lib/components/ui/Toasts.svelte";
 
   let { children }: { children: Snippet } = $props();
@@ -58,6 +60,7 @@
       downloads,
       group,
       sync,
+      lan,
       feedback,
       storage,
     ].map((store) =>
@@ -94,6 +97,7 @@
   {#if lives.videoOpen}<LiveOverlay />{/if}
   {#if ui.fullscreen}<FullscreenPlayer onclose={() => (ui.fullscreen = false)} />{/if}
 </main>
+<LanRequestDialog />
 <Toasts />
 
 <style>

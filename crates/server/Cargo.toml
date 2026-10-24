@@ -9,8 +9,8 @@ license.workspace = true
 [dependencies]
 group-protocol.workspace = true
 argon2 = "0.6"
-axum = { version = "0.8", features = ["ws"] }
-getrandom = "0.4"
+axum = { workspace = true, features = ["ws"] }
+getrandom.workspace = true
 hex = "0.4"
 rusqlite.workspace = true
 rusqlite_migration.workspace = true
