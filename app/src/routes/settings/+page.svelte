@@ -10,6 +10,7 @@
   import Button from "#lib/components/ui/Button.svelte";
   import Checkbox from "#lib/components/ui/Checkbox.svelte";
   import Chip from "#lib/components/ui/Chip.svelte";
+  import LanSync from "#lib/components/lan/LanSync.svelte";
   import StackCard from "#lib/components/ui/StackCard.svelte";
   import Panel from "#lib/components/ui/Panel.svelte";
   import ProgressBar from "#lib/components/ui/ProgressBar.svelte";
@@ -188,6 +189,8 @@
         </p>
       {/if}
     </StackCard>
+
+    <LanSync />
   </Section>
 
   <Section title="Stockage">

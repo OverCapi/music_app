@@ -14,6 +14,7 @@ mod error;
 mod feedback;
 mod group;
 mod history;
+mod lan;
 mod library;
 mod lives;
 #[cfg(target_os = "macos")]
@@ -41,6 +42,7 @@ use downloads::Downloads;
 use feedback::Feedback;
 use group::GroupClient;
 use history::History;
+use lan::Lan;
 use library::Library;
 use playlists::Playlists;
 use search::Search;
@@ -129,6 +131,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             lives::commands::get_favorite_channels,
             lives::commands::add_favorite_channel,
             lives::commands::remove_favorite_channel,
+            lan::commands::get_lan_state,
+            lan::commands::set_device_name,
+            lan::commands::lan_request_sync,
+            lan::commands::lan_answer,
         ])
         .events(collect_events![
             audio::PlayerChanged,
@@ -143,6 +149,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             feedback::FeedbackChanged,
             sync::SyncProgress,
             storage::StorageOptimized,
+            lan::LanPeers,
+            lan::LanRequest,
+            lan::LanProgress,
+            lan::LanDone,
         ])
         .typ::<error::AppError>()
 }
@@ -302,6 +312,24 @@ pub fn run() {
             app.manage(taste);
             app.manage(history);
             let playlists = Playlists::new(db.clone(), Some(handle.clone()));
+            let music_dir = app
+                .path()
+                .audio_dir()
+                .map(|dir| dir.join("Music App"))
+                .or_else(|_| app.path().app_data_dir().map(|dir| dir.join("music")))?;
+            let lan = Lan::new(
+                db.clone(),
+                library.clone(),
+                playlists.clone(),
+                music_dir.clone(),
+                Some(handle.clone()),
+            )?;
+            app.manage(lan.clone());
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = lan.start().await {
+                    tracing::warn!("LAN sync unavailable: {e}");
+                }
+            });
             app.manage(LibrarySync::new(
                 db.clone(),
                 library.clone(),
@@ -314,11 +342,6 @@ pub fn run() {
             spawn_storage_optimizer(handle.clone(), storage);
             app.manage(AccountStore::new(db));
             app.manage(GroupClient::new(handle, cache_dir.join("groups")));
-            let music_dir = app
-                .path()
-                .audio_dir()
-                .map(|dir| dir.join("Music App"))
-                .or_else(|_| app.path().app_data_dir().map(|dir| dir.join("music")))?;
             let downloads = Downloads::new(music_dir, cache_dir.join("suggestions"));
             // Suggestions never outlive the session unless liked.
             if let Err(e) = downloads.purge_suggestions(&library) {
@@ -336,6 +359,9 @@ pub fn run() {
                 // Group temp files never outlive the app.
                 if let Some(group) = app.try_state::<GroupClient>() {
                     group.shutdown();
+                }
+                if let Some(lan) = app.try_state::<Lan>() {
+                    lan.shutdown();
                 }
             }
         });
