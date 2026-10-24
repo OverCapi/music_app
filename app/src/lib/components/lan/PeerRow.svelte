@@ -30,13 +30,16 @@
       Synchroniser
     </Button>
   </div>
-  <SegmentedPills
-    items={directions}
-    value={direction}
-    tabWidth={96}
-    height={34}
-    onselect={(id) => (direction = id as Direction)}
-  />
+  <!-- Shrink-wrapped: the pills size their indicator from the width they are given. -->
+  <div class="pills">
+    <SegmentedPills
+      items={directions}
+      value={direction}
+      tabWidth={96}
+      height={34}
+      onselect={(id) => (direction = id as Direction)}
+    />
+  </div>
   <div class="mirror" class:off={!canMirror}>
     <Toggle
       checked={canMirror && mirror}
@@ -68,6 +71,10 @@
   .name {
     font-size: 15px;
     font-weight: 700;
+  }
+  .pills {
+    align-self: flex-start;
+    max-width: 100%;
   }
   .mirror {
     display: flex;
