@@ -2367,6 +2367,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "group-protocol",
+ "if-addrs",
  "lofty",
  "mdns-sd",
  "reqwest 0.12.28",

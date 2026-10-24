@@ -53,7 +53,11 @@
         </span>
       {:else if lan.requesting}
         <ProgressBar value={null} />
-        <span class="muted small">En attente de l'autre appareil…</span>
+        <span class="muted small">
+          En attente de l'autre appareil… Code à vérifier sur l'autre écran : <strong
+            >{lan.code}</strong
+          >
+        </span>
       {/if}
       {#if lan.notice}<p class="report">{lan.notice}</p>{/if}
       {#if lan.done && !lan.syncing}
@@ -79,7 +83,7 @@
               {plural(r.skipped, "titre")} ignoré{r.skipped > 1 ? "s" : ""} (ni YouTube ni fichier).
             {/if}
           </p>
-          {#each r.errors as error (error)}
+          {#each r.errors as error, i (i)}
             <p class="report error">{error}</p>
           {/each}
         {/if}

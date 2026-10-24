@@ -12,7 +12,6 @@ pub mod commands;
 
 use std::collections::HashSet;
 
-use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_specta::Event;
@@ -75,8 +74,9 @@ impl Storage {
 
     pub fn settings(&self) -> AppResult<StorageSettings> {
         Ok(StorageSettings {
-            auto: self.setting(AUTO_KEY)?.is_none_or(|v| v == "1"),
+            auto: self.db.setting(AUTO_KEY)?.is_none_or(|v| v == "1"),
             days: self
+                .db
                 .setting(DAYS_KEY)?
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(DEFAULT_DAYS),
@@ -84,8 +84,10 @@ impl Storage {
     }
 
     pub fn set_settings(&self, settings: &StorageSettings) -> AppResult<StorageSettings> {
-        self.set_setting(AUTO_KEY, if settings.auto { "1" } else { "0" })?;
-        self.set_setting(DAYS_KEY, &settings.days.max(1).to_string())?;
+        self.db
+            .set_setting(AUTO_KEY, if settings.auto { "1" } else { "0" })?;
+        self.db
+            .set_setting(DAYS_KEY, &settings.days.max(1).to_string())?;
         self.settings()
     }
 
@@ -186,31 +188,13 @@ impl Storage {
         }
         Ok(report)
     }
-
-    fn setting(&self, key: &str) -> AppResult<Option<String>> {
-        Ok(self
-            .db
-            .conn()
-            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
-                row.get(0)
-            })
-            .optional()?)
-    }
-
-    fn set_setting(&self, key: &str, value: &str) -> AppResult<()> {
-        self.db.conn().execute(
-            "INSERT INTO settings (key, value) VALUES (?1, ?2)
-             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-            params![key, value],
-        )?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::library::tests::temp_dir;
+    use rusqlite::params;
 
     struct Fixture {
         storage: Storage,

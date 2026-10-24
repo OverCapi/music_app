@@ -9,7 +9,7 @@ mod import_legacy;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension, params};
 use rusqlite_migration::{M, Migrations};
 
 use crate::error::{AppError, AppResult};
@@ -72,6 +72,25 @@ impl Db {
 
     pub fn conn(&self) -> MutexGuard<'_, Connection> {
         self.0.lock().unwrap()
+    }
+
+    /// Value of `key` in the `settings` table.
+    pub fn setting(&self, key: &str) -> AppResult<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+                row.get(0)
+            })
+            .optional()?)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> AppResult<()> {
+        self.conn().execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 }
 

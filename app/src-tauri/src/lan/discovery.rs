@@ -2,6 +2,8 @@
 //! `name`. Peers come and go as the daemon reports them; every change is pushed as
 //! [`LanPeers`](super::LanPeers).
 
+use std::net::Ipv4Addr;
+
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 
 use super::{Lan, LanPeers, Peer};
@@ -67,9 +69,9 @@ impl Lan {
         let changed = match event {
             ServiceEvent::ServiceResolved(info) => {
                 let id = info.get_property_val_str("id").unwrap_or_default();
-                let addr = info.get_addresses_v4().into_iter().min().copied();
-                match (id, addr) {
-                    (id, Some(addr)) if !id.is_empty() && id != self.inner.device_id => {
+                let addrs = local_first(info.get_addresses_v4().into_iter().copied());
+                match id {
+                    id if !id.is_empty() && !addrs.is_empty() && id != self.inner.device_id => {
                         let name = info
                             .get_property_val_str("name")
                             .and_then(super::clean_name)
@@ -77,7 +79,7 @@ impl Lan {
                         let peer = Peer {
                             id: id.to_owned(),
                             name,
-                            addr: addr.to_string(),
+                            addrs,
                             port: info.get_port(),
                         };
                         self.state()
@@ -98,4 +100,28 @@ impl Lan {
             self.emit(LanPeers { peers });
         }
     }
+}
+
+/// `addrs` as text, those on a network of this device first: the others are often
+/// a VPN or a container bridge this device cannot reach.
+fn local_first(addrs: impl Iterator<Item = Ipv4Addr>) -> Vec<String> {
+    let networks: Vec<_> = if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|i| match i.addr {
+            if_addrs::IfAddr::V4(v4) if !v4.ip.is_loopback() => {
+                let mask = u32::from(v4.netmask);
+                Some((u32::from(v4.ip) & mask, mask))
+            }
+            _ => None,
+        })
+        .collect();
+    let local = |a: &Ipv4Addr| {
+        networks
+            .iter()
+            .any(|&(net, mask)| u32::from(*a) & mask == net)
+    };
+    let mut addrs: Vec<_> = addrs.collect();
+    addrs.sort_by_key(|a| (!local(a), *a));
+    addrs.iter().map(ToString::to_string).collect()
 }

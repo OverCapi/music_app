@@ -4,7 +4,8 @@
 //! the same song when it is already there) and downloaded when played. Tracks
 //! without a YouTube id are only playable with their file, so those the library
 //! does not already have are copied from the peer first (the caller downloads
-//! [`files_needed`] and hands the paths to [`apply`]).
+//! [`files_needed`] and hands the paths to [`apply`]). A mirror missing some of
+//! those copies removes nothing.
 //!
 //! Playlists are merged by name (case-insensitive). In `mirror` mode the library
 //! becomes a copy of the peer's: playlists get its content, and tracks and playlists
@@ -107,29 +108,46 @@ pub fn files_needed<'a>(
     manifest: &'a Manifest,
 ) -> AppResult<Vec<&'a ManifestTrack>> {
     let mut needed = Vec::new();
-    for t in manifest
-        .tracks
-        .iter()
-        .filter(|t| t.youtube_id.is_none() && t.has_file)
-    {
-        if library
-            .find_similar(t.artist.as_deref(), &t.title, clean_duration(t.duration))?
-            .is_empty()
-        {
+    for t in file_only(manifest) {
+        if clean_title(&t.title).is_some() && similar(library, t)?.is_none() {
             needed.push(t);
         }
     }
     Ok(needed)
 }
 
+/// Tracks of the peer only playable with their file.
+fn file_only(manifest: &Manifest) -> impl Iterator<Item = &ManifestTrack> {
+    manifest
+        .tracks
+        .iter()
+        .filter(|t| t.youtube_id.is_none() && t.has_file)
+}
+
+/// The library track similar to `t`, compared on the text [`apply`] keeps.
+fn similar(library: &Library, t: &ManifestTrack) -> AppResult<Option<TrackId>> {
+    let Some(title) = clean_title(&t.title) else {
+        return Ok(None);
+    };
+    Ok(library
+        .find_similar(
+            clean_opt(&t.artist).as_deref(),
+            &title,
+            clean_duration(t.duration),
+        )?
+        .first()
+        .map(|t| t.id))
+}
+
 /// Merges `manifest` into the library. `files` maps a [`ManifestTrack::key`] to the
-/// local copy of its file; `trash` disposes of the file of a track removed by a
-/// mirror. Tracks that cannot be played here (no YouTube id, no file) are skipped.
+/// local copy of its file; the copies added to the library are taken out of it.
+/// `trash` disposes of the file of a track removed by a mirror. Tracks that cannot
+/// be played here (no YouTube id, no file) are skipped.
 pub fn apply(
     library: &Library,
     playlists: &Playlists,
     manifest: &Manifest,
-    files: &HashMap<i64, String>,
+    files: &mut HashMap<i64, String>,
     mirror: bool,
     trash: &dyn Fn(&str),
 ) -> AppResult<LanReport> {
@@ -163,33 +181,38 @@ pub fn apply(
     local.extend(keys.into_iter().zip(library.add_remote(&remote)?));
 
     // Tracks without YouTube id: the similar one already here, else the copied file.
-    for t in manifest
-        .tracks
-        .iter()
-        .filter(|t| t.youtube_id.is_none() && t.has_file)
-    {
+    let mut missing_files = false;
+    for t in file_only(manifest) {
         let Some(title) = clean_title(&t.title) else {
             continue;
         };
-        let artist = clean_opt(&t.artist);
-        let duration = clean_duration(t.duration);
-        if let Some(existing) = library
-            .find_similar(artist.as_deref(), &title, duration)?
-            .first()
-        {
-            local.insert(t.key, existing.id);
-        } else if let Some(path) = files.get(&t.key) {
-            match library.add_paths(std::slice::from_ref(path)) {
+        if let Some(existing) = similar(library, t)? {
+            local.insert(t.key, existing);
+        } else if let Some(path) = files.get(&t.key).cloned() {
+            match library.add_paths(std::slice::from_ref(&path)) {
                 Ok(added) => {
+                    files.remove(&t.key);
                     if let Some(track) = added.first() {
                         local.insert(t.key, track.id);
                         report.files += 1;
                     }
                 }
-                Err(e) => report.errors.push(format!("{title} : {e}")),
+                Err(e) => {
+                    report.errors.push(format!("{title} : {e}"));
+                    missing_files = true;
+                }
             }
+        } else {
+            // Its copy failed.
+            missing_files = true;
         }
     }
+    if mirror && missing_files {
+        report.errors.push(
+            "Miroir annulé : des fichiers n'ont pas pu être copiés, rien n'a été supprimé".into(),
+        );
+    }
+    let mirror = mirror && !missing_files;
     report.new_tracks = library.tracks()?.len().saturating_sub(before) as u32;
     report.skipped = manifest.tracks.len().saturating_sub(local.len()) as u32;
 
@@ -197,7 +220,7 @@ pub fn apply(
     let mut by_name: HashMap<String, PlaylistId> = playlists
         .all()?
         .into_iter()
-        .map(|p| (p.name.to_lowercase(), p.id))
+        .map(|p| (playlist_key(&p.name), p.id))
         .collect();
     let mut source_names = HashSet::new();
     for p in &manifest.playlists {
@@ -205,7 +228,7 @@ pub fn apply(
         if name.is_empty() {
             continue;
         }
-        let lower = name.to_lowercase();
+        let lower = playlist_key(&name);
         let ids: Vec<TrackId> = p
             .keys
             .iter()
@@ -245,13 +268,22 @@ pub fn apply(
             report.removed_tracks += 1;
         }
         for p in playlists.all()? {
-            if !source_names.contains(&p.name.to_lowercase()) {
+            if !source_names.contains(&playlist_key(&p.name)) {
                 playlists.delete(p.id)?;
                 report.removed_playlists += 1;
             }
         }
     }
     Ok(report)
+}
+
+/// What playlists are matched on: trimmed, bounded and lowercase name.
+fn playlist_key(name: &str) -> String {
+    name.trim()
+        .chars()
+        .take(MAX_NAME_LEN)
+        .collect::<String>()
+        .to_lowercase()
 }
 
 /// Text from a peer: trimmed, non-empty, bounded.
@@ -333,7 +365,7 @@ mod tests {
             &library,
             &playlists,
             &manifest(),
-            &HashMap::new(),
+            &mut HashMap::new(),
             false,
             &no_trash,
         )
@@ -356,7 +388,7 @@ mod tests {
             &library,
             &playlists,
             &manifest(),
-            &HashMap::new(),
+            &mut HashMap::new(),
             false,
             &no_trash,
         )
@@ -383,7 +415,7 @@ mod tests {
             &library,
             &playlists,
             &manifest(),
-            &HashMap::new(),
+            &mut HashMap::new(),
             false,
             &no_trash,
         )
@@ -414,7 +446,7 @@ mod tests {
             &library,
             &playlists,
             &manifest(),
-            &HashMap::new(),
+            &mut HashMap::new(),
             true,
             &|p| {
                 trashed.borrow_mut().push(p.to_owned());
@@ -446,7 +478,7 @@ mod tests {
                 &library,
                 &playlists,
                 &empty,
-                &HashMap::new(),
+                &mut HashMap::new(),
                 true,
                 &no_trash
             )
@@ -457,12 +489,65 @@ mod tests {
                 &library,
                 &playlists,
                 &empty,
-                &HashMap::new(),
+                &mut HashMap::new(),
                 false,
                 &no_trash
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn mirror_with_missing_files_removes_nothing() {
+        let (library, playlists) = setup();
+        library
+            .add_remote(&[RemoteTrack {
+                title: "Mine".into(),
+                artist: None,
+                album: None,
+                duration: 10.0,
+                youtube_id: Some("ccccccccccc".into()),
+            }])
+            .unwrap();
+        let mienne = playlists.create("Mienne").unwrap().id;
+        let mut m = manifest();
+        m.tracks.push(ManifestTrack {
+            youtube_id: None,
+            has_file: true,
+            ext: Some("mp3".into()),
+            ..yt(4, "", "Local only")
+        });
+        // Its copy failed: not in `files`.
+        let report = apply(
+            &library,
+            &playlists,
+            &m,
+            &mut HashMap::new(),
+            true,
+            &no_trash,
+        )
+        .unwrap();
+        assert_eq!((report.removed_tracks, report.removed_playlists), (0, 0));
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(library.tracks().unwrap().len(), 3);
+
+        // Names are matched as the peer's are cleaned: " mienne " is "Mienne".
+        let m = Manifest {
+            playlists: vec![list(" mienne ", &[1])],
+            ..manifest()
+        };
+        apply(
+            &library,
+            &playlists,
+            &m,
+            &mut HashMap::new(),
+            true,
+            &no_trash,
+        )
+        .unwrap();
+        let all = playlists.all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, mienne);
     }
 
     #[test]

@@ -107,8 +107,8 @@ impl LibrarySync {
 
     pub fn settings(&self) -> AppResult<SyncSettings> {
         Ok(SyncSettings {
-            ytmusic_browser: self.setting(BROWSER_KEY)?,
-            ytmusic_synced_at: self.setting(SYNCED_AT_KEY)?.and_then(|v| v.parse().ok()),
+            ytmusic_browser: self.db.setting(BROWSER_KEY)?,
+            ytmusic_synced_at: self.db.setting(SYNCED_AT_KEY)?.and_then(|v| v.parse().ok()),
             browsers: ytdlp::COOKIE_BROWSERS
                 .iter()
                 .map(|b| (*b).to_owned())
@@ -120,13 +120,13 @@ impl LibrarySync {
         if !ytdlp::COOKIE_BROWSERS.contains(&browser) {
             return Err(AppError::invalid("Navigateur non pris en charge"));
         }
-        self.set_setting(BROWSER_KEY, browser)?;
+        self.db.set_setting(BROWSER_KEY, browser)?;
         self.settings()
     }
 
     /// Imports the liked songs and the library playlists of YouTube Music.
     pub async fn sync_youtube_music(&self) -> AppResult<SyncReport> {
-        let browser = self.setting(BROWSER_KEY)?.ok_or_else(|| {
+        let browser = self.db.setting(BROWSER_KEY)?.ok_or_else(|| {
             AppError::invalid("Choisis d'abord le navigateur connecté à YouTube Music")
         })?;
         if self.running.swap(true, Ordering::SeqCst) {
@@ -135,7 +135,8 @@ impl LibrarySync {
         let result = self.run_youtube_music(&browser).await;
         self.running.store(false, Ordering::SeqCst);
         if result.is_ok() {
-            self.set_setting(SYNCED_AT_KEY, &now_secs().to_string())?;
+            self.db
+                .set_setting(SYNCED_AT_KEY, &now_secs().to_string())?;
         }
         result
     }
@@ -250,25 +251,6 @@ impl LibrarySync {
                 tracing::warn!("emit SyncProgress failed: {e}");
             }
         }
-    }
-
-    fn setting(&self, key: &str) -> AppResult<Option<String>> {
-        Ok(self
-            .db
-            .conn()
-            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
-                row.get(0)
-            })
-            .optional()?)
-    }
-
-    fn set_setting(&self, key: &str, value: &str) -> AppResult<()> {
-        self.db.conn().execute(
-            "INSERT INTO settings (key, value) VALUES (?1, ?2)
-             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-            params![key, value],
-        )?;
-        Ok(())
     }
 }
 

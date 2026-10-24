@@ -6,13 +6,18 @@
 //! as [`LanPeers`]. It also runs a small HTTP server ([`server`]).
 //!
 //! A sync is requested by one device (A) and must be accepted on the other (B):
-//! 1. A creates a session token for its own server and `POST /request`s B with the
-//!    direction and its port. The request waits for B's user ([`LanRequest`] event,
-//!    [`Lan::answer`]), 60 s at most.
-//! 2. If accepted, B answers with a session token of its own.
+//! 1. A `POST /request`s B with the direction, its port, a 4-digit code shown on
+//!    both screens (B's user checks the request really comes from A) and, if B is
+//!    to pull A, a session token for A's server. The request waits for B's user
+//!    ([`LanRequest`] event, [`Lan::answer`]), 60 s at most.
+//! 2. If accepted, B answers with a session token of its own if A is to pull B.
 //! 3. The device that *receives* pulls the other one's `GET /manifest` and
-//!    `GET /file/<key>` with the token it was given ([`merge`] applies it).
+//!    `GET /file/<key>` with the token it was given ([`merge`] applies it), then
+//!    `POST /done` ends the session.
 //!    `Send`: B pulls A. `Receive`: A pulls B. `Both`: each pulls the other.
+//!
+//! A device is busy (refuses other syncs) while it requests, pulls, or is pulled
+//! (a live session token).
 //!
 //! `mirror` (one direction only) makes the receiver a copy of the sender.
 //! Progress is pushed as [`LanProgress`], the outcome as [`LanDone`].
@@ -28,7 +33,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
@@ -49,6 +53,9 @@ const MAX_NAME_LEN: usize = 50;
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(60);
 /// A session token stops working after this long without being used.
 const SESSION_IDLE: Duration = Duration::from_secs(300);
+/// A peer that sends nothing for this long is gone. Above [`ANSWER_TIMEOUT`]:
+/// `POST /request` stays silent while the other user decides.
+const READ_TIMEOUT: Duration = Duration::from_secs(75);
 
 /// Who sends and who receives, from the requesting device's point of view.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -75,7 +82,8 @@ impl Direction {
 pub struct Peer {
     pub id: String,
     pub name: String,
-    pub addr: String,
+    /// IPv4 addresses, those on a network of this device first.
+    pub addrs: Vec<String>,
     pub port: u16,
 }
 
@@ -85,6 +93,8 @@ pub struct IncomingRequest {
     pub name: String,
     pub direction: Direction,
     pub mirror: bool,
+    /// Shown on the requesting device too.
+    pub code: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, specta::Type)]
@@ -140,9 +150,11 @@ struct RequestBody {
     name: String,
     direction: Direction,
     mirror: bool,
-    /// Port of the requester's server and the token to use on it.
+    /// Port of the requester's server and the token to use on it (only when the
+    /// other device pulls the requester).
     port: u16,
-    token: String,
+    token: Option<String>,
+    code: String,
 }
 
 /// Answer to `POST /request`.
@@ -229,19 +241,22 @@ impl Lan {
         music_dir: std::path::PathBuf,
         app: Option<AppHandle>,
     ) -> AppResult<Self> {
-        let device_id = match setting(&db, DEVICE_ID_KEY)? {
+        let device_id = match db.setting(DEVICE_ID_KEY)? {
             Some(id) => id,
             None => {
                 let id = random_hex(8)?;
-                set_setting(&db, DEVICE_ID_KEY, &id)?;
+                db.set_setting(DEVICE_ID_KEY, &id)?;
                 id
             }
         };
-        let name = setting(&db, DEVICE_NAME_KEY)?
+        let name = db
+            .setting(DEVICE_NAME_KEY)?
             .and_then(|n| clean_name(&n))
             .unwrap_or_else(default_device_name);
         let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
+            // Short: the next address of the peer is tried on failure.
+            .connect_timeout(Duration::from_secs(3))
+            .read_timeout(READ_TIMEOUT)
             .build()?;
         Ok(Self {
             inner: Arc::new(Inner {
@@ -277,7 +292,7 @@ impl Lan {
                 "Le nom de l'appareil doit faire entre 1 et {MAX_NAME_LEN} caractères"
             ))
         })?;
-        set_setting(&self.inner.db, DEVICE_NAME_KEY, &name)?;
+        self.inner.db.set_setting(DEVICE_NAME_KEY, &name)?;
         self.state().name = name.clone();
         self.advertise();
         Ok(name)
@@ -293,15 +308,19 @@ impl Lan {
         }
     }
 
-    /// Asks `peer_id` for a sync. Returns whether the other user accepted; when it
-    /// did, the pull (if this device receives) runs to the end before returning, with
-    /// the outcome pushed as [`LanDone`].
+    /// Asks `peer_id` for a sync, `code` being shown on both devices. Returns whether
+    /// the other user accepted; when it did, the pull (if this device receives) runs
+    /// to the end before returning, with the outcome pushed as [`LanDone`].
     pub async fn request_sync(
         &self,
         peer_id: &str,
         direction: Direction,
         mirror: bool,
+        code: &str,
     ) -> AppResult<bool> {
+        if !valid_code(code) {
+            return Err(AppError::invalid("Code de vérification invalide"));
+        }
         let peer = self
             .state()
             .peers
@@ -312,7 +331,11 @@ impl Lan {
         let _busy = self.begin()?;
         let (token, port, name) = {
             let mut state = self.state();
-            let token = new_session(&mut state)?;
+            // Access to this device only for a peer that pulls it.
+            let token = direction
+                .accepter_pulls()
+                .then(|| new_session(&mut state))
+                .transpose()?;
             (token, state.port, state.name.clone())
         };
         let body = RequestBody {
@@ -322,26 +345,26 @@ impl Lan {
             mirror: mirror && direction != Direction::Both,
             port,
             token,
+            code: code.to_owned(),
         };
-        let base = format!("http://{}:{}", peer.addr, peer.port);
-        let response = self
-            .inner
-            .http
-            .post(format!("{base}/request"))
-            // A bit more than the other user's time to answer.
-            .timeout(ANSWER_TIMEOUT + Duration::from_secs(15))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AppError::Network(format!("{} ne répond pas : {e}", peer.name)))?;
-        if response.status() == reqwest::StatusCode::CONFLICT {
-            return Err(AppError::invalid(format!("{} est occupé", peer.name)));
+        let answer = self.ask(&peer, &body).await;
+        if !matches!(answer, Ok((_, Answer { accepted: true, .. })))
+            && let Some(token) = &body.token
+        {
+            // Nobody will pull this device.
+            self.state().sessions.remove(token);
         }
-        let answer: Answer = response.error_for_status()?.json().await?;
-        let (true, Some(token)) = (answer.accepted, answer.token) else {
+        let (base, answer) = answer?;
+        if !answer.accepted {
             return Ok(false);
-        };
+        }
         if direction.requester_pulls() {
+            let token = answer.token.ok_or_else(|| {
+                AppError::Network(format!(
+                    "{} n'a pas donné accès à sa bibliothèque",
+                    peer.name
+                ))
+            })?;
             // Only a mirror on the receiving side: here, the requester.
             self.run_pull(
                 &peer.name,
@@ -354,10 +377,56 @@ impl Lan {
         Ok(true)
     }
 
+    /// Posts `body` to the first address of `peer` that can be reached. Returns the
+    /// base URL used and the answer.
+    async fn ask(&self, peer: &Peer, body: &RequestBody) -> AppResult<(String, Answer)> {
+        let mut last_error = None;
+        for addr in &peer.addrs {
+            let base = format!("http://{addr}:{}", peer.port);
+            let sent = self
+                .inner
+                .http
+                .post(format!("{base}/request"))
+                // A bit more than the other user's time to answer.
+                .timeout(ANSWER_TIMEOUT + Duration::from_secs(15))
+                .json(body)
+                .send()
+                .await;
+            let response = match sent {
+                Ok(response) => response,
+                // Another address may be on a network this device can reach.
+                Err(e) if e.is_connect() => {
+                    last_error = Some(e);
+                    continue;
+                }
+                Err(e) => {
+                    return Err(AppError::Network(format!(
+                        "{} ne répond pas : {e}",
+                        peer.name
+                    )));
+                }
+            };
+            if response.status() == reqwest::StatusCode::CONFLICT {
+                return Err(AppError::invalid(format!("{} est occupé", peer.name)));
+            }
+            let answer: Answer = response.error_for_status()?.json().await?;
+            return Ok((base, answer));
+        }
+        Err(AppError::Network(match last_error {
+            Some(e) => format!("{} ne répond pas : {e}", peer.name),
+            None => format!("{} n'a pas d'adresse IPv4", peer.name),
+        }))
+    }
+
     /// Handles `POST /request` from `ip`: waits for the user, then answers.
     async fn incoming(&self, body: RequestBody, ip: IpAddr) -> Result<Answer, IncomingError> {
         let name = clean_name(&body.name).unwrap_or_else(|| "Appareil inconnu".into());
-        if body.port == 0 || !valid_token(&body.token) {
+        // A token exactly when this device is to pull the requester.
+        if body.port == 0
+            || !valid_code(&body.code)
+            || body.token.is_some() != body.direction.accepter_pulls()
+            || body.token.as_deref().is_some_and(|t| !valid_token(t))
+        {
             return Err(IncomingError::Invalid);
         }
         let busy = self.begin().map_err(|_| IncomingError::Busy)?;
@@ -368,6 +437,7 @@ impl Lan {
             direction: body.direction,
             // A mirror only makes sense when this device receives alone.
             mirror: body.mirror && body.direction == Direction::Send,
+            code: body.code.clone(),
         };
         self.state().pending = Some(Pending {
             id,
@@ -386,25 +456,41 @@ impl Lan {
                 token: None,
             });
         }
-        let token = new_session(&mut self.state()).map_err(|_| IncomingError::Invalid)?;
-        if body.direction.accepter_pulls() {
+        let token = if body.direction.requester_pulls() {
+            Some(new_session(&mut self.state()).map_err(|_| IncomingError::Invalid)?)
+        } else {
+            None
+        };
+        if let Some(peer_token) = body.token {
             let lan = self.clone();
             let base = format!("http://{ip}:{}", body.port);
             tauri::async_runtime::spawn(async move {
                 let _busy = busy;
-                lan.run_pull(&name, &base, &body.token, request.mirror)
+                lan.run_pull(&name, &base, &peer_token, request.mirror)
                     .await;
             });
         }
         Ok(Answer {
             accepted: true,
-            token: Some(token),
+            token,
         })
     }
 
     /// Pulls the other device's library and pushes the outcome as [`LanDone`].
     async fn run_pull(&self, device: &str, base: &str, token: &str, mirror: bool) {
         let result = self.pull(base, token, mirror).await;
+        // Frees the other device now rather than when the session expires.
+        let done = self
+            .inner
+            .http
+            .post(format!("{base}/done"))
+            .bearer_auth(token)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await;
+        if let Err(e) = done {
+            tracing::warn!("cannot end the LAN session: {e}");
+        }
         let (report, error) = match result {
             Ok(report) => (Some(report), None),
             Err(e) => (None, Some(e.to_string())),
@@ -451,14 +537,19 @@ impl Lan {
                 tracing::warn!("cannot trash {path}: {e}");
             }
         };
-        let mut report = merge::apply(
+        let result = merge::apply(
             &self.inner.library,
             &self.inner.playlists,
             &manifest,
-            &files,
+            &mut files,
             mirror,
             &trash,
-        )?;
+        );
+        // Copies the merge did not keep (similar track found, unreadable file, error).
+        for path in files.values() {
+            let _ = tokio::fs::remove_file(path).await;
+        }
+        let mut report = result?;
         report.errors.extend(errors);
         Ok(report)
     }
@@ -532,9 +623,15 @@ impl Lan {
         }
     }
 
-    /// One sync at a time per device.
+    /// One sync at a time per device. A device still pulling this one (live session)
+    /// counts as a sync.
     fn begin(&self) -> AppResult<BusyGuard> {
-        if self.inner.busy.swap(true, Ordering::SeqCst) {
+        let served = {
+            let mut state = self.state();
+            drop_expired(&mut state);
+            !state.sessions.is_empty()
+        };
+        if served || self.inner.busy.swap(true, Ordering::SeqCst) {
             return Err(AppError::invalid("Une synchronisation est déjà en cours"));
         }
         Ok(BusyGuard(Arc::clone(&self.inner)))
@@ -566,11 +663,15 @@ enum IncomingError {
     Busy,
 }
 
-/// Creates a session token and drops the expired ones.
-fn new_session(state: &mut State) -> AppResult<String> {
+fn drop_expired(state: &mut State) {
     state
         .sessions
         .retain(|_, last_used| last_used.elapsed() < SESSION_IDLE);
+}
+
+/// Creates a session token and drops the expired ones.
+fn new_session(state: &mut State) -> AppResult<String> {
+    drop_expired(state);
     let token = random_hex(32)?;
     state.sessions.insert(token.clone(), Instant::now());
     Ok(token)
@@ -578,6 +679,10 @@ fn new_session(state: &mut State) -> AppResult<String> {
 
 fn valid_token(token: &str) -> bool {
     (16..=128).contains(&token.len()) && token.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+fn valid_code(code: &str) -> bool {
+    code.len() == 4 && code.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// `bytes` random bytes from the OS, hex-encoded.
@@ -618,24 +723,6 @@ fn default_device_name() -> String {
         .unwrap_or_else(|| "Mon appareil".into())
 }
 
-fn setting(db: &Db, key: &str) -> AppResult<Option<String>> {
-    Ok(db
-        .conn()
-        .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
-            row.get(0)
-        })
-        .optional()?)
-}
-
-fn set_setting(db: &Db, key: &str, value: &str) -> AppResult<()> {
-    db.conn().execute(
-        "INSERT INTO settings (key, value) VALUES (?1, ?2)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        params![key, value],
-    )?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -673,7 +760,7 @@ mod tests {
         assert_eq!(lan.set_device_name(" Salon ").unwrap(), "Salon");
         assert_eq!(lan.device_state().device_name, "Salon");
         assert_eq!(
-            setting(&lan.inner.db, DEVICE_NAME_KEY).unwrap().as_deref(),
+            lan.inner.db.setting(DEVICE_NAME_KEY).unwrap().as_deref(),
             Some("Salon")
         );
     }
@@ -747,7 +834,8 @@ mod tests {
             Peer {
                 id: other.inner.device_id.clone(),
                 name,
-                addr: "127.0.0.1".into(),
+                // An unreachable address first: the next one is tried.
+                addrs: vec!["127.0.0.2".into(), "127.0.0.1".into()],
                 port,
             },
         );
@@ -785,7 +873,7 @@ mod tests {
         answer_next(&b, false);
         let id = b.inner.device_id.clone();
         assert!(
-            !a.request_sync(&id, Direction::Receive, false)
+            !a.request_sync(&id, Direction::Receive, false, "1234")
                 .await
                 .unwrap()
         );
@@ -794,7 +882,7 @@ mod tests {
         // A receives B's library.
         answer_next(&b, true);
         assert!(
-            a.request_sync(&id, Direction::Receive, false)
+            a.request_sync(&id, Direction::Receive, false, "1234")
                 .await
                 .unwrap()
         );
@@ -807,7 +895,11 @@ mod tests {
 
         // A sends to B, as a mirror: B becomes a copy of A.
         answer_next(&b, true);
-        assert!(a.request_sync(&id, Direction::Send, true).await.unwrap());
+        assert!(
+            a.request_sync(&id, Direction::Send, true, "1234")
+                .await
+                .unwrap()
+        );
         until(|| b_library.tracks().unwrap().len() == 3 && !b.inner.busy.load(Ordering::SeqCst))
             .await;
         assert_eq!(b_playlists.all().unwrap()[0].track_ids.len(), 3);
@@ -861,7 +953,9 @@ mod tests {
             direction: Direction::Receive,
             mirror: false,
             port: 1234,
-            token: "a".repeat(32),
+            // `Receive`: this device does not pull the requester.
+            token: None,
+            code: "1234".into(),
         };
         let ip: IpAddr = "127.0.0.1".parse().unwrap();
 
@@ -881,7 +975,7 @@ mod tests {
 
         // Accepted: a session token for the requester, and nothing to pull (`Receive`).
         let waiting = tokio::spawn({
-            let lan = lan.clone();
+            let (lan, body) = (lan.clone(), body.clone());
             async move { lan.incoming(body, ip).await }
         });
         while lan.device_state().incoming.is_none() {
@@ -890,8 +984,21 @@ mod tests {
         lan.answer(true);
         let answer = waiting.await.unwrap().ok().unwrap();
         assert!(answer.accepted);
-        assert!(lan.check_token(&answer.token.unwrap()));
-        // The device is free again.
+        let token = answer.token.unwrap();
+        assert!(lan.check_token(&token));
+        // Busy while the requester pulls, free once it is done.
+        assert!(lan.begin().is_err());
+        lan.state().sessions.remove(&token);
         assert!(lan.begin().is_ok());
+
+        // A token that does not match the direction is refused.
+        let wrong = RequestBody {
+            token: Some("a".repeat(32)),
+            ..body
+        };
+        assert!(matches!(
+            lan.incoming(wrong, ip).await,
+            Err(IncomingError::Invalid)
+        ));
     }
 }
