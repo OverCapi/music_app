@@ -131,10 +131,11 @@ export const commands = {
 	getLanState: () => __TAURI_INVOKE<LanState>("get_lan_state"),
 	setDeviceName: (name: string) => __TAURI_INVOKE<string>("set_device_name", { name }),
 	/**
-	 *  Asks a device of the network for a sync. Returns whether its user accepted;
-	 *  progress and the outcome come as `LanProgress` / `LanDone` events.
+	 *  Asks a device of the network for a sync; `code` (4 digits) is shown there too.
+	 *  Returns whether its user accepted; progress and the outcome come as
+	 *  `LanProgress` / `LanDone` events.
 	 */
-	lanRequestSync: (peerId: string, direction: Direction, mirror: boolean) => __TAURI_INVOKE<boolean>("lan_request_sync", { peerId, direction, mirror }),
+	lanRequestSync: (peerId: string, direction: Direction, mirror: boolean, code: string) => __TAURI_INVOKE<boolean>("lan_request_sync", { peerId, direction, mirror, code }),
 	/**  Answers the sync request shown to the user. */
 	lanAnswer: (accept: boolean) => __TAURI_INVOKE<void>("lan_answer", { accept }),
 };
@@ -261,6 +262,8 @@ export type IncomingRequest = {
 	name: string,
 	direction: Direction,
 	mirror: boolean,
+	/**  Shown on the requesting device too. */
+	code: string,
 };
 
 export type LanDone = {
@@ -358,7 +361,8 @@ export type MixTrack = {
 export type Peer = {
 	id: string,
 	name: string,
-	addr: string,
+	/**  IPv4 addresses, those on a network of this device first. */
+	addrs: string[],
 	port: number,
 };
 

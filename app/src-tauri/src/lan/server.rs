@@ -2,7 +2,8 @@
 //!
 //! `POST /request` is open (the user of this device decides); `GET /manifest` and
 //! `GET /file/<key>` need the session token given when a request was made or
-//! accepted (`Authorization: Bearer`). Only files of library tracks are served.
+//! accepted (`Authorization: Bearer`); `POST /done` ends that session. Only files
+//! of library tracks are served.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -28,6 +29,7 @@ impl Lan {
             .route("/request", post(request))
             .route("/manifest", get(manifest))
             .route("/file/{key}", get(file))
+            .route("/done", post(done))
             .with_state(self.clone());
         tauri::async_runtime::spawn(async move {
             let service = app.into_make_service_with_connect_info::<SocketAddr>();
@@ -92,12 +94,23 @@ async fn file(State(lan): State<Lan>, headers: HeaderMap, UrlPath(key): UrlPath<
     response
 }
 
-fn authorized(lan: &Lan, headers: &HeaderMap) -> bool {
+/// The puller is done: its token stops working and this device is free again.
+async fn done(State(lan): State<Lan>, headers: HeaderMap) -> StatusCode {
+    if let Some(token) = bearer(&headers) {
+        lan.state().sessions.remove(token);
+    }
+    StatusCode::NO_CONTENT
+}
+
+fn bearer(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|token| lan.check_token(token))
+}
+
+fn authorized(lan: &Lan, headers: &HeaderMap) -> bool {
+    bearer(headers).is_some_and(|token| lan.check_token(token))
 }
 
 fn internal(e: AppError) -> Response {

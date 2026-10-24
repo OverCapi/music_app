@@ -19,6 +19,10 @@
         manque à l'autre.
       {/if}
     </p>
+    <p>
+      Vérifie que l'autre appareil affiche le code <strong>{request.code}</strong>. Sinon, refuse :
+      quelqu'un d'autre sur le réseau se fait passer pour lui.
+    </p>
     {#if request.mirror}
       <p class="warn">
         Mode miroir : ta bibliothèque deviendra une copie de la sienne. Les titres et playlists

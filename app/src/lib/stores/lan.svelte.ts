@@ -23,6 +23,8 @@ class Lan {
   done = $state<LanDone | null>(null);
   /** Last thing worth telling about a request we made (refusal, acceptance). */
   notice = $state<string | null>(null);
+  /** Code of our pending request, shown on the other device too. */
+  code = $state<string | null>(null);
 
   /** A sync is running here (our request, or one we accepted). */
   get syncing() {
@@ -34,8 +36,11 @@ class Lan {
     this.done = null;
     this.notice = null;
     this.progress = null;
-    const accepted = await attempt(() => commands.lanRequestSync(peer.id, direction, mirror));
+    const code = String(crypto.getRandomValues(new Uint16Array(1))[0] % 10000).padStart(4, "0");
+    this.code = code;
+    const accepted = await attempt(() => commands.lanRequestSync(peer.id, direction, mirror, code));
     this.requesting = false;
+    this.code = null;
     if (accepted === false) this.notice = `${peer.name} a refusé la synchronisation.`;
     else if (accepted && direction === "send")
       this.notice = `${peer.name} a accepté : la bibliothèque est en cours d'envoi.`;
